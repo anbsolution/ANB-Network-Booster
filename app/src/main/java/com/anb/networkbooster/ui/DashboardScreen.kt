@@ -35,6 +35,11 @@ enum class DashboardScreen(
         "Settings",
         "APP SETTINGS",
         "Appearance, permissions and app information"
+    ),
+    GUIDE(
+        "Guide",
+        "OFFLINE NETWORK GUIDE",
+        "Searchable Hindi and English network troubleshooting guide"
     );
 
     companion object {

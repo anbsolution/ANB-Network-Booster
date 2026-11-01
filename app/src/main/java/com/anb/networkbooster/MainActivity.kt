@@ -11,6 +11,7 @@ import android.os.Looper
 import android.view.Gravity
 import android.view.View
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -19,6 +20,7 @@ import com.anb.networkbooster.ui.DashboardScreen
 import com.anb.networkbooster.network.InternetPerformanceTester
 import com.anb.networkbooster.network.InternetTestResult
 import com.anb.networkbooster.network.NetworkMonitor
+import com.anb.networkbooster.network.OfflineNetworkGuide
 import com.anb.networkbooster.network.SignalMonitor
 import com.anb.networkbooster.network.SimSignalSnapshot
 import org.json.JSONArray
@@ -40,6 +42,7 @@ class MainActivity : Activity() {
     private lateinit var analyzerView: TextView
     private lateinit var recommendationsView: TextView
     private lateinit var trendsView: TextView
+    private lateinit var offlineGuideContainer: LinearLayout
     private lateinit var mainScroll: ScrollView
     private lateinit var pageHost: LinearLayout
     private val pageContainers = mutableMapOf<DashboardScreen, LinearLayout>()
@@ -187,6 +190,13 @@ class MainActivity : Activity() {
         historyView = sectionText(loadHistoryText())
         root.addView(historyView)
 
+        root.addView(sectionHeading("OFFLINE NETWORK GUIDE"))
+        offlineGuideContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        buildOfflineGuideContent()
+        root.addView(offlineGuideContainer, matchWrap())
+
         // Phase 6.2: move existing dashboard views into five independent screens.
         val screenViews = DashboardScreen.values().associateWith {
             LinearLayout(this).apply {
@@ -207,6 +217,7 @@ class MainActivity : Activity() {
             "PERFORMANCE DASHBOARD",
             "SMART SPEED ENGINE · 3 TESTS" -> DashboardScreen.SPEED
             "RECENT TEST HISTORY" -> DashboardScreen.HISTORY
+            "OFFLINE NETWORK GUIDE" -> DashboardScreen.GUIDE
             else -> DashboardScreen.HOME
         }
 
@@ -219,7 +230,8 @@ class MainActivity : Activity() {
                         "Appearance", "NETWORK CONNECTION", "LIVE SIM SIGNAL",
                         "AIRTEL NETWORK INTELLIGENCE", "NETWORK DIAGNOSTIC ANALYZER",
                         "SMART OPTIMIZATION RECOMMENDATIONS", "PERFORMANCE DASHBOARD",
-                        "SMART SPEED ENGINE · 3 TESTS", "RECENT TEST HISTORY"
+                        "SMART SPEED ENGINE · 3 TESTS", "RECENT TEST HISTORY",
+                        "OFFLINE NETWORK GUIDE"
                     )
                 ) destination = screenForHeading(heading)
             }
@@ -386,6 +398,67 @@ class MainActivity : Activity() {
         minHeight = dp(56)
         background = panelBackground(buttonColor(), buttonBorderColor(), 14)
         setOnClickListener { action() }
+    }
+
+    private fun buildOfflineGuideContent() {
+        var hindi = true
+        val search = EditText(this).apply {
+            hint = "Search topics / विषय खोजें"
+            textSize = 15f
+            singleLine = true
+            setTextColor(primaryTextColor())
+            setHintTextColor(secondaryTextColor())
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            background = panelBackground(cardColor(), cardBorderColor(), 13)
+        }
+        lateinit var languageButton: Button
+        languageButton = actionButton("Language: हिंदी") { hindi = !hindi; renderGuide() }
+        val results = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val detail = sectionText("एक topic चुनें / Select a topic to read its offline guide.")
+        val header = TextView(this).apply {
+            text = "OFFLINE KNOWLEDGE PACK · ${OfflineNetworkGuide.articles.size} TOPICS"
+            textSize = 12f
+            setTextColor(accentTextColor())
+            setPadding(dp(3), dp(8), dp(3), dp(8))
+        }
+        fun showArticle(article: com.anb.networkbooster.network.OfflineGuideArticle) {
+            detail.text = buildString {
+                appendLine(if (hindi) article.titleHi else article.titleEn)
+                appendLine("${article.category} · OFFLINE")
+                appendLine()
+                append(if (hindi) article.bodyHi else article.bodyEn)
+            }
+        }
+        fun renderGuide() {
+            languageButton.text = if (hindi) "Language: हिंदी" else "Language: English"
+            results.removeAllViews()
+            val query = search.text?.toString()?.trim()?.lowercase(Locale.ROOT).orEmpty()
+            val matches = OfflineNetworkGuide.articles.filter { article ->
+                query.isBlank() || listOf(article.category, article.titleEn, article.titleHi, article.keywords)
+                    .any { it.lowercase(Locale.ROOT).contains(query) }
+            }
+            if (matches.isEmpty()) {
+                results.addView(captionText("No matching topic. Try: signal, speed, SIM, Wi-Fi, latency / सिग्नल, स्पीड, SIM"))
+            } else {
+                matches.forEach { article ->
+                    val item = sectionText("${if (hindi) article.titleHi else article.titleEn}\n${article.category}  ·  Read guide  ›")
+                    item.textSize = 15f
+                    item.setOnClickListener { showArticle(article) }
+                    results.addView(item, matchWrap())
+                }
+            }
+        }
+        search.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = renderGuide()
+            override fun afterTextChanged(s: android.text.Editable?) = Unit
+        })
+        offlineGuideContainer.addView(header, matchWrap())
+        offlineGuideContainer.addView(search, matchWrap().apply { bottomMargin = dp(8) })
+        offlineGuideContainer.addView(languageButton, matchWrap().apply { bottomMargin = dp(8) })
+        offlineGuideContainer.addView(detail, matchWrap())
+        offlineGuideContainer.addView(results, matchWrap())
+        renderGuide()
     }
 
     private fun requestSignalPermissions() {
