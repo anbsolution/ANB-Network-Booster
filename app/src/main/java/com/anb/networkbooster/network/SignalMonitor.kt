@@ -118,7 +118,7 @@ class SignalMonitor(
             }
         }
         try {
-            manager.listen(listener, LISTEN_SIGNAL_STRENGTHS)
+            manager.listen(listener, PhoneStateListener.LISTEN_SIGNAL_STRENGTHS)
             registrations.add(Registration(manager, listener))
         } catch (_: SecurityException) {
             onMessage("$label: permission denied.")
@@ -129,7 +129,7 @@ class SignalMonitor(
     fun stop() {
         registrations.forEach {
             try {
-                it.manager.listen(it.listener, LISTEN_NONE)
+                it.manager.listen(it.listener, PhoneStateListener.LISTEN_NONE)
             } catch (_: Exception) {
                 // The system may already have removed this listener.
             }
