@@ -4,6 +4,8 @@ import android.Manifest
 import android.app.Activity
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.View
 import android.widget.Button
@@ -37,6 +39,9 @@ class MainActivity : Activity() {
     private lateinit var internetTester: InternetPerformanceTester
     private val simViews = mutableMapOf<String, TextView>()
     private var latestAirtelSignal: SimSignalSnapshot? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var batchRunning = false
+    private val batchResults = mutableListOf<InternetTestResult>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -55,7 +60,7 @@ class MainActivity : Activity() {
         }
 
         val subtitle = TextView(this).apply {
-            text = "AIRTEL NETWORK INTELLIGENCE · PHASE 4"
+            text = "SMART SPEED ENGINE · PHASE 5.1"
             textSize = 12f
             gravity = Gravity.CENTER
             setPadding(0, 8, 0, 20)
@@ -82,17 +87,18 @@ class MainActivity : Activity() {
         intelligenceView = sectionText(loadIntelligenceText())
         alertView = sectionText("Network alerts will appear here after signal and speed measurements.")
 
-        val internetHeading = sectionText("INTERNET PERFORMANCE TEST")
+        val internetHeading = sectionText("SMART SPEED ENGINE · 3 TESTS")
         internetStatusView = sectionText(
-            "Keep Airtel selected as the default mobile-data SIM and turn Wi-Fi off before testing."
+            "Keep Airtel selected as the default mobile-data SIM and turn Wi-Fi off. " +
+                "The smart check runs 3 measurements and calculates their averages."
         )
         speedTestButton = Button(this).apply {
-            text = "START INTERNET TEST"
-            setOnClickListener { startInternetTest() }
+            text = "RUN 3-TEST SMART SPEED CHECK"
+            setOnClickListener { startInternetTestBatch() }
         }
         val dataNotice = sectionText(
-            "Test traffic: approx. 1 MB download + 256 KB upload. " +
-                "Generated test bytes are sent to Cloudflare speed-test servers; " +
+            "Each test uses about 1 MB download + 256 KB upload. " +
+                "A 3-test check uses about 3.75 MB total. Generated test bytes are sent to Cloudflare speed-test servers; " +
                 "no personal files are uploaded. Mobile data charges may apply."
         )
         historyView = sectionText(loadHistoryText())
@@ -183,31 +189,72 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun startInternetTest() {
+    private fun startInternetTestBatch() {
+        if (batchRunning) return
+        batchRunning = true
+        batchResults.clear()
         speedTestButton.isEnabled = false
-        internetStatusView.text = "Preparing Airtel mobile-data test…"
+        runBatchTest(1)
+    }
+
+    private fun runBatchTest(testNumber: Int) {
+        internetStatusView.text = "Smart speed check: test $testNumber of $BATCH_TESTS…"
         internetTester.run(
             onStatus = { status ->
-                runOnUiThread { internetStatusView.text = status }
+                runOnUiThread {
+                    internetStatusView.text = "Test $testNumber/$BATCH_TESTS · $status"
+                }
             },
             onComplete = { result ->
                 runOnUiThread {
-                    speedTestButton.isEnabled = true
-                    internetStatusView.text = result.toDisplayText()
+                    batchResults.add(result)
                     saveResult(result)
                     historyView.text = loadHistoryText()
-                    refreshIntelligence()
+                    if (testNumber < BATCH_TESTS) {
+                        internetStatusView.text =
+                            "Test $testNumber complete. Preparing test ${testNumber + 1}/$BATCH_TESTS…"
+                        // Let the tester's worker finish and clear its running flag before the next run.
+                        mainHandler.postDelayed({ runBatchTest(testNumber + 1) }, NEXT_TEST_DELAY_MS)
+                    } else {
+                        finishBatch()
+                    }
                 }
             },
             onError = { error ->
                 runOnUiThread {
+                    batchRunning = false
                     speedTestButton.isEnabled = true
-                    internetStatusView.text = "Test could not complete\n$error"
+                    internetStatusView.text =
+                        "Smart speed check stopped at test $testNumber/$BATCH_TESTS.\n$error\nCompleted tests: ${batchResults.size}"
                     refreshIntelligence()
                 }
             }
         )
     }
+
+    private fun finishBatch() {
+        batchRunning = false
+        speedTestButton.isEnabled = true
+        val down = batchResults.mapNotNull { it.downloadMbps }
+        val up = batchResults.mapNotNull { it.uploadMbps }
+        val ping = batchResults.mapNotNull { it.pingMs }
+        val jitter = batchResults.mapNotNull { it.jitterMs }
+        internetStatusView.text = buildString {
+            appendLine("SMART SPEED CHECK COMPLETE · ${batchResults.size}/$BATCH_TESTS tests")
+            appendLine("Network: ${batchResults.lastOrNull()?.networkLabel ?: "Mobile data"}")
+            appendLine("Average download: ${averageText(down)}")
+            appendLine("Average upload: ${averageText(up)}")
+            appendLine("Average TCP latency: ${ping.takeIf { it.isNotEmpty() }?.average()?.let { "%.0f ms".format(Locale.US, it) } ?: "N/A"}")
+            appendLine("Average jitter: ${jitter.takeIf { it.isNotEmpty() }?.average()?.let { "%.0f ms".format(Locale.US, it) } ?: "N/A"}")
+            appendLine("Individual tests saved to local history.")
+            append("Note: results vary with cell load, radio conditions and server path.")
+        }
+        refreshIntelligence()
+    }
+
+    private fun averageText(values: List<Double>): String =
+        values.takeIf { it.isNotEmpty() }?.average()
+            ?.let { "%.2f Mbps".format(Locale.US, it) } ?: "N/A"
 
     private fun saveResult(result: InternetTestResult) {
         val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
@@ -393,5 +440,7 @@ class MainActivity : Activity() {
         private const val KEY_HISTORY = "internet_test_history"
         private const val KEY_STRUCTURED_HISTORY = "internet_test_history_structured"
         private const val MAX_HISTORY = 10
+        private const val BATCH_TESTS = 3
+        private const val NEXT_TEST_DELAY_MS = 1200L
     }
 }
