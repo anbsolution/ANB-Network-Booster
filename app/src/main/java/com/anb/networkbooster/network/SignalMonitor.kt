@@ -31,10 +31,7 @@ data class SimSignalSnapshot(
     }
 }
 
-/**
- * Reads modem-reported signal information. It cannot increase radio power
- * or force a handset to connect to a particular cell tower.
- */
+/** Reads modem-reported signal metrics; it cannot increase radio power or force tower handovers. */
 class SignalMonitor(
     private val context: Context,
     private val onSnapshot: (SimSignalSnapshot) -> Unit,
@@ -60,10 +57,8 @@ class SignalMonitor(
             return
         }
         stop()
-
         try {
-            val subscriptionManager =
-                context.getSystemService(SubscriptionManager::class.java)
+            val subscriptionManager = context.getSystemService(SubscriptionManager::class.java)
             val subscriptions = subscriptionManager?.activeSubscriptionInfoList.orEmpty()
             val baseManager = context.getSystemService(TelephonyManager::class.java)
 
@@ -76,14 +71,9 @@ class SignalMonitor(
                 val manager = baseManager.createForSubscriptionId(info.subscriptionId)
                 val carrier = info.carrierName?.toString()?.takeIf { it.isNotBlank() }
                     ?: "SIM ${index + 1}"
-                registerForSubscription(
-                    manager,
-                    "SIM ${info.simSlotIndex + 1} · $carrier"
-                )
+                registerForSubscription(manager, "SIM ${info.simSlotIndex + 1} · $carrier")
             }
-            if (registrations.isEmpty()) {
-                onMessage("No active SIM signal listener is available.")
-            }
+            if (registrations.isEmpty()) onMessage("No active SIM signal listener is available.")
         } catch (_: SecurityException) {
             onMessage("Android denied SIM information. Check app permissions and retry.")
         } catch (_: Exception) {
@@ -121,19 +111,12 @@ class SignalMonitor(
 
                 onSnapshot(
                     SimSignalSnapshot(
-                        label = label,
-                        networkDbm = dbm,
-                        rsrp = rsrp,
-                        rsrq = rsrq,
-                        rssnr = rssnr,
-                        rssi = rssi,
-                        level = signalStrength.level,
-                        quality = quality
+                        label, dbm, rsrp, rsrq, rssnr, rssi,
+                        signalStrength.level, quality
                     )
                 )
             }
         }
-
         try {
             manager.listen(listener, LISTEN_SIGNAL_STRENGTHS)
             registrations.add(Registration(manager, listener))
@@ -144,9 +127,9 @@ class SignalMonitor(
 
     @Suppress("DEPRECATION")
     fun stop() {
-        registrations.forEach { registration ->
+        registrations.forEach {
             try {
-                registration.manager.listen(registration.listener, LISTEN_NONE)
+                it.manager.listen(it.listener, LISTEN_NONE)
             } catch (_: Exception) {
                 // The system may already have removed this listener.
             }
