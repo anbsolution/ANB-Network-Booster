@@ -3,6 +3,7 @@ package com.anb.networkbooster
 import android.Manifest
 import android.app.Activity
 import android.content.pm.PackageManager
+import android.content.Intent
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
@@ -35,6 +36,7 @@ class MainActivity : Activity() {
     private lateinit var networkStatusView: TextView
     private lateinit var permissionStatusView: TextView
     private lateinit var signalContainer: LinearLayout
+    private lateinit var signalAnalyticsView: TextView
     private lateinit var internetStatusView: TextView
     private lateinit var historyView: TextView
     private lateinit var intelligenceView: TextView
@@ -148,6 +150,19 @@ class MainActivity : Activity() {
         }
         root.addView(signalContainer, matchWrap().apply { bottomMargin = dp(12) })
 
+        root.addView(sectionHeading("SIGNAL TREND ANALYTICS"))
+        signalAnalyticsView = sectionText(
+            "Signal history will appear after Android provides LTE readings. " +
+                "Up to 20 local samples are retained per SIM, with a minimum 30-second interval."
+        )
+        root.addView(signalAnalyticsView)
+        root.addView(actionButton("Refresh signal analytics") {
+            refreshSignalAnalytics()
+        }, matchWrap().apply { bottomMargin = dp(8) })
+        root.addView(actionButton("Share signal report") {
+            shareSignalAnalytics()
+        }, matchWrap().apply { bottomMargin = dp(14) })
+
         root.addView(sectionHeading("AIRTEL NETWORK INTELLIGENCE"))
         intelligenceView = sectionText(loadIntelligenceText())
         alertView = sectionText("Network alerts will appear here after signal and speed measurements.")
@@ -210,7 +225,8 @@ class MainActivity : Activity() {
         fun screenForHeading(heading: String): DashboardScreen = when (heading) {
             "Appearance" -> DashboardScreen.SETTINGS
             "NETWORK CONNECTION" -> DashboardScreen.HOME
-            "LIVE SIM SIGNAL" -> DashboardScreen.SIGNAL
+            "LIVE SIM SIGNAL",
+            "SIGNAL TREND ANALYTICS" -> DashboardScreen.SIGNAL
             "AIRTEL NETWORK INTELLIGENCE",
             "NETWORK DIAGNOSTIC ANALYZER",
             "SMART OPTIMIZATION RECOMMENDATIONS" -> DashboardScreen.HOME
@@ -228,6 +244,7 @@ class MainActivity : Activity() {
                 val heading = child.text?.toString().orEmpty()
                 if (heading in setOf(
                         "Appearance", "NETWORK CONNECTION", "LIVE SIM SIGNAL",
+                        "SIGNAL TREND ANALYTICS",
                         "AIRTEL NETWORK INTELLIGENCE", "NETWORK DIAGNOSTIC ANALYZER",
                         "SMART OPTIMIZATION RECOMMENDATIONS", "PERFORMANCE DASHBOARD",
                         "SMART SPEED ENGINE · 3 TESTS", "RECENT TEST HISTORY",
@@ -499,8 +516,37 @@ class MainActivity : Activity() {
 
         if (snapshot.label.contains("airtel", ignoreCase = true)) {
             latestAirtelSignal = snapshot
+            refreshSignalAnalytics()
             refreshIntelligence()
         }
+    }
+
+    private fun refreshSignalAnalytics() {
+        if (!::signalAnalyticsView.isInitialized) return
+        val label = latestAirtelSignal?.label
+        signalAnalyticsView.text = if (label == null || !::signalMonitor.isInitialized) {
+            "Waiting for Airtel LTE signal samples. Grant Phone and precise Location permissions, then keep signal monitoring active."
+        } else {
+            signalMonitor.getHistoryAnalytics(label)
+        }
+    }
+
+    private fun shareSignalAnalytics() {
+        if (!::signalAnalyticsView.isInitialized) return
+        val report = buildString {
+            appendLine("ANB Network Booster · Signal Trend Report")
+            appendLine("Generated: ${DateFormat.getDateTimeInstance().format(Date())}")
+            appendLine()
+            append(signalAnalyticsView.text)
+            appendLine()
+            append("Note: Android modem readings are estimates; this report does not measure tower distance or guarantee coverage.")
+        }
+        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, "ANB Network Signal Report")
+            putExtra(Intent.EXTRA_TEXT, report)
+        }
+        startActivity(Intent.createChooser(sendIntent, "Share signal report"))
     }
 
     private fun startInternetTestBatch() {

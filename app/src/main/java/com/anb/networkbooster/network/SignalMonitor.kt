@@ -226,6 +226,45 @@ class SignalMonitor(
         }
     }
 
+    /** Returns a compact summary of the existing local signal history for one SIM. */
+    fun getHistoryAnalytics(label: String): String {
+        val key = label.hashCode().toString()
+        val prefs = context.getSharedPreferences("anb_coverage_history", Context.MODE_PRIVATE)
+        val raw = prefs.getString(key, "[]") ?: "[]"
+        val records = try {
+            val array = JSONArray(raw)
+            (0 until array.length()).mapNotNull { array.optJSONObject(it) }
+        } catch (_: Exception) {
+            emptyList()
+        }
+        if (records.isEmpty()) {
+            return "$label\nNo saved samples yet. Keep signal monitoring active; samples are stored at most once every 30 seconds."
+        }
+
+        fun values(field: String): List<Int> = records.mapNotNull { item ->
+            if (item.isNull(field) || !item.has(field)) null else item.optInt(field)
+        }
+        fun averageText(items: List<Int>, unit: String): String =
+            items.takeIf { it.isNotEmpty() }?.average()?.let { "%.1f %s".format(java.util.Locale.US, it, unit) } ?: "Unavailable"
+
+        val rsrp = values("rsrp")
+        val rsrq = values("rsrq")
+        val sinr = values("sinr")
+        val oldest = records.last().optLong("time")
+        val newest = records.first().optLong("time")
+        val dateFormat = java.text.DateFormat.getDateTimeInstance()
+        return buildString {
+            appendLine(label)
+            appendLine("Saved samples: ${records.size.coerceAtMost(20)} / 20 (local history)")
+            appendLine("Period: ${dateFormat.format(java.util.Date(oldest))} – ${dateFormat.format(java.util.Date(newest))}")
+            appendLine("RSRP average: ${averageText(rsrp, "dBm")}")
+            appendLine("RSRP best / weakest: ${rsrp.maxOrNull()?.let { "$it dBm" } ?: "N/A"} / ${rsrp.minOrNull()?.let { "$it dBm" } ?: "N/A"}")
+            appendLine("RSRQ average: ${averageText(rsrq, "dB")}")
+            appendLine("SINR average: ${averageText(sinr, "dB")}")
+            append("History is local to this device; up to 20 samples are retained per SIM.")
+        }
+    }
+
     @Suppress("DEPRECATION")
     fun stop() {
         registrations.forEach { registration ->
