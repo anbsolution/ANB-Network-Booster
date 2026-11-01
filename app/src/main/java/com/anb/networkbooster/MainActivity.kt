@@ -38,6 +38,8 @@ class MainActivity : Activity() {
     private lateinit var analyzerView: TextView
     private lateinit var recommendationsView: TextView
     private lateinit var trendsView: TextView
+    private lateinit var mainScroll: ScrollView
+    private val sectionAnchors = mutableMapOf<String, View>()
     private lateinit var speedTestButton: Button
     private lateinit var networkMonitor: NetworkMonitor
     private lateinit var signalMonitor: SignalMonitor
@@ -46,40 +48,73 @@ class MainActivity : Activity() {
     private var latestAirtelSignal: SimSignalSnapshot? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private var batchRunning = false
+    private var darkTheme = true
     private val batchResults = mutableListOf<InternetTestResult>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        darkTheme = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getBoolean(KEY_DARK_THEME, true)
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(20), dp(18), dp(28))
-            setBackgroundColor(0xFF081426.toInt())
+            setPadding(dp(16), dp(16), dp(16), dp(24))
+            setBackgroundColor(bgColor())
         }
 
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding(dp(16), dp(22), dp(16), dp(22))
-            background = panelBackground(0xFF102747.toInt(), 0xFF24466F.toInt(), 22)
+            setPadding(dp(18), dp(24), dp(18), dp(24))
+            background = panelBackground(cardHeaderColor(), cardBorderColor(), 22)
         }
         val title = TextView(this).apply {
             text = "ANB NETWORK BOOSTER"
-            textSize = 22f
+            textSize = 24f
             typeface = Typeface.create("sans-serif", Typeface.BOLD)
             gravity = Gravity.CENTER
-            setTextColor(0xFFFFFFFF.toInt())
+            setTextColor(primaryTextColor())
         }
         val subtitle = TextView(this).apply {
             text = "NETWORK INTELLIGENCE  ·  PHASE 5"
-            textSize = 12f
+            textSize = 13f
             gravity = Gravity.CENTER
             setPadding(0, dp(7), 0, 0)
-            setTextColor(0xFF8DBBFF.toInt())
+            setTextColor(accentTextColor())
         }
         header.addView(title)
         header.addView(subtitle)
-        root.addView(header, matchWrap().apply { bottomMargin = dp(18) })
+        root.addView(header, matchWrap().apply { bottomMargin = dp(12) })
+        root.addView(sectionHeading("Appearance"))
+
+        val themeRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14), dp(8), dp(8), dp(8))
+            background = panelBackground(cardColor(), cardBorderColor(), 14)
+        }
+        val themeLabel = TextView(this).apply {
+            text = "Appearance"
+            textSize = 15f
+            setTextColor(primaryTextColor())
+            layoutParams = LinearLayout.LayoutParams(0, dp(48), 1f)
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val themeButton = Button(this).apply {
+            text = if (darkTheme) "Dark mode" else "Light mode"
+            textSize = 13f
+            isAllCaps = false
+            setTextColor(primaryTextColor())
+            background = panelBackground(buttonColor(), buttonBorderColor(), 12)
+            setOnClickListener {
+                darkTheme = !darkTheme
+                getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+                    .putBoolean(KEY_DARK_THEME, darkTheme).apply()
+                recreate()
+            }
+        }
+        themeRow.addView(themeLabel)
+        themeRow.addView(themeButton, LinearLayout.LayoutParams(dp(124), dp(46)))
+        root.addView(themeRow, matchWrap().apply { bottomMargin = dp(12) })
 
         networkStatusView = sectionText("Network status: checking…")
         permissionStatusView = sectionText(
@@ -102,7 +137,7 @@ class MainActivity : Activity() {
         signalContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
-        root.addView(signalContainer, matchWrap().apply { bottomMargin = dp(10) })
+        root.addView(signalContainer, matchWrap().apply { bottomMargin = dp(12) })
 
         root.addView(sectionHeading("AIRTEL NETWORK INTELLIGENCE"))
         intelligenceView = sectionText(loadIntelligenceText())
@@ -133,7 +168,7 @@ class MainActivity : Activity() {
         }
         root.addView(speedTestButton, matchWrap().apply {
             topMargin = dp(5)
-            bottomMargin = dp(10)
+            bottomMargin = dp(12)
         })
         val dataNotice = captionText(
             "Each test uses about 1 MB download + 256 KB upload. A 3-test check uses about 3.75 MB total. " +
@@ -146,15 +181,24 @@ class MainActivity : Activity() {
         historyView = sectionText(loadHistoryText())
         root.addView(historyView)
 
-        val scroll = ScrollView(this).apply {
+        mainScroll = ScrollView(this).apply {
             isFillViewport = true
             clipToPadding = false
-            setPadding(0, 0, 0, dp(8))
+            setPadding(0, 0, 0, dp(12))
             isVerticalScrollBarEnabled = true
             addView(root)
-            setBackgroundColor(0xFF081426.toInt())
+            setBackgroundColor(bgColor())
         }
-        setContentView(scroll)
+
+        val appShell = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(bgColor())
+        }
+        appShell.addView(mainScroll, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
+        ))
+        appShell.addView(buildBottomNavigation(), matchWrap())
+        setContentView(appShell)
 
         networkMonitor = NetworkMonitor(this) { state ->
             runOnUiThread { networkStatusView.text = "Network status\n$state" }
@@ -176,6 +220,16 @@ class MainActivity : Activity() {
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
 
+    private fun bgColor() = if (darkTheme) 0xFF081426.toInt() else 0xFFF4F7FC.toInt()
+    private fun cardColor() = if (darkTheme) 0xFF10213A.toInt() else 0xFFFFFFFF.toInt()
+    private fun cardHeaderColor() = if (darkTheme) 0xFF102747.toInt() else 0xFFEAF1FB.toInt()
+    private fun cardBorderColor() = if (darkTheme) 0xFF1E385A.toInt() else 0xFFD8E2F0.toInt()
+    private fun buttonColor() = if (darkTheme) 0xFF1769D2.toInt() else 0xFF1558B0.toInt()
+    private fun buttonBorderColor() = if (darkTheme) 0xFF4B98FF.toInt() else 0xFF9BBCE8.toInt()
+    private fun primaryTextColor() = if (darkTheme) 0xFFEAF1FC.toInt() else 0xFF17263A.toInt()
+    private fun secondaryTextColor() = if (darkTheme) 0xFFB2C2D8.toInt() else 0xFF52647A.toInt()
+    private fun accentTextColor() = if (darkTheme) 0xFF82B6FF.toInt() else 0xFF1558B0.toInt()
+
     private fun matchWrap() = LinearLayout.LayoutParams(
         LinearLayout.LayoutParams.MATCH_PARENT,
         LinearLayout.LayoutParams.WRAP_CONTENT
@@ -190,42 +244,81 @@ class MainActivity : Activity() {
 
     private fun sectionHeading(value: String) = TextView(this).apply {
         text = value
-        textSize = 13f
+        textSize = 14f
         typeface = Typeface.create("sans-serif", Typeface.BOLD)
-        letterSpacing = 0.045f
-        setTextColor(0xFF82B6FF.toInt())
-        setPadding(dp(3), dp(18), dp(3), dp(9))
+        letterSpacing = 0.035f
+        setTextColor(accentTextColor())
+        setPadding(dp(3), dp(20), dp(3), dp(10))
+        sectionAnchors[value] = this
+    }
+
+    private fun buildBottomNavigation(): View {
+        val bar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(dp(5), dp(7), dp(5), dp(7))
+            background = panelBackground(cardHeaderColor(), cardBorderColor(), 18)
+            elevation = dp(8).toFloat()
+        }
+        val items = listOf(
+            "Home" to "NETWORK CONNECTION",
+            "Signal" to "LIVE SIM SIGNAL",
+            "Speed" to "SMART SPEED ENGINE · 3 TESTS",
+            "History" to "RECENT TEST HISTORY",
+            "Settings" to "Appearance"
+        )
+        items.forEach { (label, anchor) ->
+            val tab = TextView(this).apply {
+                text = label
+                textSize = 12f
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                gravity = Gravity.CENTER
+                setTextColor(accentTextColor())
+                setPadding(dp(4), dp(12), dp(4), dp(12))
+                setOnClickListener { scrollToSection(anchor) }
+            }
+            bar.addView(tab, LinearLayout.LayoutParams(0, dp(46), 1f))
+        }
+        return bar
+    }
+
+    private fun scrollToSection(title: String) {
+        val target = sectionAnchors[title] ?: return
+        mainScroll.post {
+            mainScroll.smoothScrollTo(0, target.top.coerceAtLeast(0))
+        }
     }
 
     private fun sectionText(value: String) = TextView(this).apply {
         text = value
-        textSize = 14f
-        setTextColor(0xFFE4EDFA.toInt())
-        setLineSpacing(dp(3).toFloat(), 1.04f)
-        setPadding(dp(15), dp(14), dp(15), dp(14))
-        background = panelBackground(0xFF10213A.toInt(), 0xFF1E385A.toInt(), 15)
+        textSize = 16f
+        includeFontPadding = true
+        setTextColor(primaryTextColor())
+        setLineSpacing(dp(4).toFloat(), 1.06f)
+        setPadding(dp(17), dp(16), dp(17), dp(16))
+        background = panelBackground(cardColor(), cardBorderColor(), 15)
         val params = matchWrap()
-        params.bottomMargin = dp(10)
+        params.bottomMargin = dp(12)
         layoutParams = params
     }
 
     private fun captionText(value: String) = TextView(this).apply {
         text = value
-        textSize = 12f
-        setTextColor(0xFF9FB2CB.toInt())
+        textSize = 13f
+        setTextColor(secondaryTextColor())
         setLineSpacing(dp(2).toFloat(), 1.0f)
         setPadding(dp(4), dp(5), dp(4), dp(12))
     }
 
     private fun actionButton(label: String, action: () -> Unit) = Button(this).apply {
         text = label
-        textSize = 14f
+        textSize = 16f
         isAllCaps = false
         typeface = Typeface.create("sans-serif", Typeface.BOLD)
-        setTextColor(0xFFFFFFFF.toInt())
+        setTextColor(primaryTextColor())
         setPadding(dp(14), dp(11), dp(14), dp(11))
-        minHeight = dp(50)
-        background = panelBackground(0xFF1769D2.toInt(), 0xFF4B98FF.toInt(), 14)
+        minHeight = dp(56)
+        background = panelBackground(buttonColor(), buttonBorderColor(), 14)
         setOnClickListener { action() }
     }
 
@@ -251,11 +344,12 @@ class MainActivity : Activity() {
     private fun showSnapshot(snapshot: SimSignalSnapshot) {
         val card = simViews.getOrPut(snapshot.label) {
             TextView(this).also {
-                it.textSize = 14f
-                it.setTextColor(0xFFFFFFFF.toInt())
-                it.setLineSpacing(dp(3).toFloat(), 1.03f)
-                it.setPadding(dp(15), dp(15), dp(15), dp(15))
-                it.background = panelBackground(0xFF132B49.toInt(), 0xFF31547C.toInt(), 16)
+                it.textSize = 15.5f
+                it.includeFontPadding = true
+                it.setTextColor(primaryTextColor())
+                it.setLineSpacing(dp(4).toFloat(), 1.05f)
+                it.setPadding(dp(17), dp(17), dp(17), dp(17))
+                it.background = panelBackground(cardColor(), cardBorderColor(), 16)
                 val params = matchWrap()
                 params.bottomMargin = dp(11)
                 signalContainer.addView(it, params)
@@ -666,6 +760,7 @@ class MainActivity : Activity() {
         private const val REQUEST_SIGNAL_PERMISSIONS = 210
         private const val PREFS_NAME = "anb_network_history"
         private const val KEY_HISTORY = "internet_test_history"
+        private const val KEY_DARK_THEME = "dark_theme_enabled"
         private const val KEY_STRUCTURED_HISTORY = "internet_test_history_structured"
         private const val MAX_HISTORY = 10
         private const val BATCH_TESTS = 3
