@@ -3,6 +3,8 @@ package com.anb.networkbooster
 import android.Manifest
 import android.app.Activity
 import android.content.pm.PackageManager
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -51,91 +53,108 @@ class MainActivity : Activity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(24, 28, 24, 24)
-            setBackgroundColor(0xFF0B1730.toInt())
+            setPadding(dp(18), dp(20), dp(18), dp(28))
+            setBackgroundColor(0xFF081426.toInt())
         }
 
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(dp(16), dp(22), dp(16), dp(22))
+            background = panelBackground(0xFF102747.toInt(), 0xFF24466F.toInt(), 22)
+        }
         val title = TextView(this).apply {
             text = "ANB NETWORK BOOSTER"
-            textSize = 23f
+            textSize = 22f
+            typeface = Typeface.create("sans-serif", Typeface.BOLD)
             gravity = Gravity.CENTER
             setTextColor(0xFFFFFFFF.toInt())
         }
-
         val subtitle = TextView(this).apply {
-            text = "NETWORK INTELLIGENCE · PHASE 5.3"
+            text = "NETWORK INTELLIGENCE  ·  PHASE 5"
             textSize = 12f
             gravity = Gravity.CENTER
-            setPadding(0, 8, 0, 20)
-            setTextColor(0xFF75A9FF.toInt())
+            setPadding(0, dp(7), 0, 0)
+            setTextColor(0xFF8DBBFF.toInt())
         }
+        header.addView(title)
+        header.addView(subtitle)
+        root.addView(header, matchWrap().apply { bottomMargin = dp(18) })
 
         networkStatusView = sectionText("Network status: checking…")
         permissionStatusView = sectionText(
             "Signal monitoring needs Phone and precise Location permissions. " +
                 "Location is used by Android to expose nearby cell information."
         )
-
-        val permissionButton = Button(this).apply {
-            text = "Grant permissions & start signal monitoring"
-            setOnClickListener { requestSignalPermissions() }
+        val permissionButton = actionButton("Grant permissions & start monitoring") {
+            requestSignalPermissions()
         }
 
-        val signalHeading = sectionText("LIVE SIM SIGNAL")
+        root.addView(sectionHeading("NETWORK CONNECTION"))
+        root.addView(networkStatusView)
+        root.addView(permissionStatusView)
+        root.addView(permissionButton, matchWrap().apply {
+            topMargin = dp(4)
+            bottomMargin = dp(18)
+        })
+
+        root.addView(sectionHeading("LIVE SIM SIGNAL"))
         signalContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
+        root.addView(signalContainer, matchWrap().apply { bottomMargin = dp(10) })
 
-        val intelligenceHeading = sectionText("AIRTEL NETWORK INTELLIGENCE")
+        root.addView(sectionHeading("AIRTEL NETWORK INTELLIGENCE"))
         intelligenceView = sectionText(loadIntelligenceText())
         alertView = sectionText("Network alerts will appear here after signal and speed measurements.")
-        val analyzerHeading = sectionText("NETWORK DIAGNOSTIC ANALYZER")
-        analyzerView = sectionText("Waiting for available signal and speed measurements.")
-        val recommendationsHeading = sectionText("SMART OPTIMIZATION RECOMMENDATIONS")
-        recommendationsView = sectionText("Recommendations will appear when measurements are available.")
-        val trendsHeading = sectionText("PERFORMANCE DASHBOARD · RECENT TRENDS")
-        trendsView = sectionText(buildTrendDashboard())
+        root.addView(intelligenceView)
+        root.addView(alertView)
 
-        val internetHeading = sectionText("SMART SPEED ENGINE · 3 TESTS")
+        root.addView(sectionHeading("NETWORK DIAGNOSTIC ANALYZER"))
+        analyzerView = sectionText("Waiting for available signal and speed measurements.")
+        root.addView(analyzerView)
+
+        root.addView(sectionHeading("SMART OPTIMIZATION RECOMMENDATIONS"))
+        recommendationsView = sectionText("Recommendations will appear when measurements are available.")
+        root.addView(recommendationsView)
+
+        root.addView(sectionHeading("PERFORMANCE DASHBOARD"))
+        trendsView = sectionText(buildTrendDashboard())
+        root.addView(trendsView)
+
+        root.addView(sectionHeading("SMART SPEED ENGINE · 3 TESTS"))
         internetStatusView = sectionText(
             "Keep Airtel selected as the default mobile-data SIM and turn Wi-Fi off. " +
                 "The smart check runs 3 measurements and calculates their averages."
         )
-        speedTestButton = Button(this).apply {
-            text = "RUN 3-TEST SMART SPEED CHECK"
-            setOnClickListener { startInternetTestBatch() }
-        }
-        val dataNotice = sectionText(
-            "Each test uses about 1 MB download + 256 KB upload. " +
-                "A 3-test check uses about 3.75 MB total. Generated test bytes are sent to Cloudflare speed-test servers; " +
-                "no personal files are uploaded. Mobile data charges may apply."
-        )
-        historyView = sectionText(loadHistoryText())
-
-        root.addView(title)
-        root.addView(subtitle)
-        root.addView(networkStatusView)
-        root.addView(signalHeading)
-        root.addView(permissionStatusView)
-        root.addView(permissionButton)
-        root.addView(signalContainer)
-        root.addView(intelligenceHeading)
-        root.addView(intelligenceView)
-        root.addView(alertView)
-        root.addView(analyzerHeading)
-        root.addView(analyzerView)
-        root.addView(recommendationsHeading)
-        root.addView(recommendationsView)
-        root.addView(trendsHeading)
-        root.addView(trendsView)
-        root.addView(internetHeading)
         root.addView(internetStatusView)
-        root.addView(speedTestButton)
+        speedTestButton = actionButton("Run 3-test smart speed check") {
+            startInternetTestBatch()
+        }
+        root.addView(speedTestButton, matchWrap().apply {
+            topMargin = dp(5)
+            bottomMargin = dp(10)
+        })
+        val dataNotice = captionText(
+            "Each test uses about 1 MB download + 256 KB upload. A 3-test check uses about 3.75 MB total. " +
+                "Generated test bytes are sent to Cloudflare speed-test servers; no personal files are uploaded. " +
+                "Mobile data charges may apply."
+        )
         root.addView(dataNotice)
-        root.addView(sectionText("RECENT TEST HISTORY"))
+
+        root.addView(sectionHeading("RECENT TEST HISTORY"))
+        historyView = sectionText(loadHistoryText())
         root.addView(historyView)
 
-        setContentView(ScrollView(this).apply { addView(root) })
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            clipToPadding = false
+            setPadding(0, 0, 0, dp(8))
+            isVerticalScrollBarEnabled = true
+            addView(root)
+            setBackgroundColor(0xFF081426.toInt())
+        }
+        setContentView(scroll)
 
         networkMonitor = NetworkMonitor(this) { state ->
             runOnUiThread { networkStatusView.text = "Network status\n$state" }
@@ -155,11 +174,59 @@ class MainActivity : Activity() {
         refreshIntelligence()
     }
 
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
+
+    private fun matchWrap() = LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams.MATCH_PARENT,
+        LinearLayout.LayoutParams.WRAP_CONTENT
+    )
+
+    private fun panelBackground(fill: Int, stroke: Int, radiusDp: Int): GradientDrawable =
+        GradientDrawable().apply {
+            setColor(fill)
+            cornerRadius = dp(radiusDp).toFloat()
+            setStroke(dp(1), stroke)
+        }
+
+    private fun sectionHeading(value: String) = TextView(this).apply {
+        text = value
+        textSize = 13f
+        typeface = Typeface.create("sans-serif", Typeface.BOLD)
+        letterSpacing = 0.045f
+        setTextColor(0xFF82B6FF.toInt())
+        setPadding(dp(3), dp(18), dp(3), dp(9))
+    }
+
     private fun sectionText(value: String) = TextView(this).apply {
         text = value
         textSize = 14f
-        setTextColor(0xFFD5E4FF.toInt())
-        setPadding(0, 12, 0, 12)
+        setTextColor(0xFFE4EDFA.toInt())
+        setLineSpacing(dp(3).toFloat(), 1.04f)
+        setPadding(dp(15), dp(14), dp(15), dp(14))
+        background = panelBackground(0xFF10213A.toInt(), 0xFF1E385A.toInt(), 15)
+        val params = matchWrap()
+        params.bottomMargin = dp(10)
+        layoutParams = params
+    }
+
+    private fun captionText(value: String) = TextView(this).apply {
+        text = value
+        textSize = 12f
+        setTextColor(0xFF9FB2CB.toInt())
+        setLineSpacing(dp(2).toFloat(), 1.0f)
+        setPadding(dp(4), dp(5), dp(4), dp(12))
+    }
+
+    private fun actionButton(label: String, action: () -> Unit) = Button(this).apply {
+        text = label
+        textSize = 14f
+        isAllCaps = false
+        typeface = Typeface.create("sans-serif", Typeface.BOLD)
+        setTextColor(0xFFFFFFFF.toInt())
+        setPadding(dp(14), dp(11), dp(14), dp(11))
+        minHeight = dp(50)
+        background = panelBackground(0xFF1769D2.toInt(), 0xFF4B98FF.toInt(), 14)
+        setOnClickListener { action() }
     }
 
     private fun requestSignalPermissions() {
@@ -186,13 +253,11 @@ class MainActivity : Activity() {
             TextView(this).also {
                 it.textSize = 14f
                 it.setTextColor(0xFFFFFFFF.toInt())
-                it.setPadding(16, 18, 16, 18)
-                it.setBackgroundColor(0xFF172B49.toInt())
-                val params = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                )
-                params.bottomMargin = 12
+                it.setLineSpacing(dp(3).toFloat(), 1.03f)
+                it.setPadding(dp(15), dp(15), dp(15), dp(15))
+                it.background = panelBackground(0xFF132B49.toInt(), 0xFF31547C.toInt(), 16)
+                val params = matchWrap()
+                params.bottomMargin = dp(11)
                 signalContainer.addView(it, params)
             }
         }
@@ -209,6 +274,7 @@ class MainActivity : Activity() {
         batchRunning = true
         batchResults.clear()
         speedTestButton.isEnabled = false
+        speedTestButton.alpha = 0.55f
         runBatchTest(1)
     }
 
@@ -239,6 +305,7 @@ class MainActivity : Activity() {
                 runOnUiThread {
                     batchRunning = false
                     speedTestButton.isEnabled = true
+                    speedTestButton.alpha = 1f
                     internetStatusView.text =
                         "Smart speed check stopped at test $testNumber/$BATCH_TESTS.\n$error\nCompleted tests: ${batchResults.size}"
                     refreshIntelligence()
@@ -250,6 +317,7 @@ class MainActivity : Activity() {
     private fun finishBatch() {
         batchRunning = false
         speedTestButton.isEnabled = true
+        speedTestButton.alpha = 1f
         val down = batchResults.mapNotNull { it.downloadMbps }
         val up = batchResults.mapNotNull { it.uploadMbps }
         val ping = batchResults.mapNotNull { it.pingMs }
@@ -404,7 +472,6 @@ class MainActivity : Activity() {
             } else {
                 findings.add("Coverage: ${signal.quality.lowercase(Locale.US)} based on modem signal readings.")
             }
-
             if (signal.radioQuality == "Poor") {
                 findings.add("Radio quality: RSRQ/SINR indicates poor radio conditions; interference or cell load may contribute.")
             } else if (signal.radioQuality == "Moderate") {
@@ -422,7 +489,6 @@ class MainActivity : Activity() {
             val jitter = numberOrNull(latest, "jitter")
             val failures = latest.optInt("failures", 0)
             val probes = latest.optInt("probes", 5).coerceAtLeast(1)
-
             if (down != null) {
                 findings.add(
                     if (down < 5.0) "Throughput: download is currently low (${formatMbps(down)}); this can reflect radio conditions, congestion, or server path."
@@ -440,15 +506,11 @@ class MainActivity : Activity() {
             1 -> "Low · only one measurement group available"
             else -> "Insufficient · waiting for measurements"
         }
-
         return buildString {
             appendLine("RULE-BASED DIAGNOSTIC · NOT CLOUD AI")
             appendLine("Confidence: $confidence")
-            if (findings.isEmpty()) {
-                appendLine("No diagnosis yet. Wait for a signal sample and run the speed check.")
-            } else {
-                findings.forEach { appendLine("• $it") }
-            }
+            if (findings.isEmpty()) appendLine("No diagnosis yet. Wait for a signal sample and run the speed check.")
+            else findings.forEach { appendLine("• $it") }
             append("Next step: compare 2–3 readings at different times. One sample cannot prove tower congestion.")
         }
     }
@@ -481,7 +543,6 @@ class MainActivity : Activity() {
             val ping = numberOrNull(latest, "ping")
             val jitter = numberOrNull(latest, "jitter")
             val failures = latest.optInt("failures", 0)
-            val probes = latest.optInt("probes", 5).coerceAtLeast(1)
             if (down != null && down < 5.0) suggestions.add("Download: run another 3-test check later and compare at the same location.")
             if (up != null && up < 0.5) suggestions.add("Upload: pause large background uploads during the next measurement, then retest.")
             if (ping != null && ping > 150) suggestions.add("Latency: compare at another time and avoid heavy simultaneous downloads while testing.")
@@ -511,7 +572,6 @@ class MainActivity : Activity() {
         if (records.isEmpty()) {
             return "No performance history yet.\nRun the 3-test Smart Speed Check to create trend data."
         }
-
         fun values(key: String): List<Double> = records.mapNotNull { numberOrNull(it, key) }
         fun sparkline(items: List<Double>): String {
             if (items.isEmpty()) return "No data"
@@ -525,7 +585,6 @@ class MainActivity : Activity() {
                 glyphs[index].toString()
             }
         }
-
         val down = values("down")
         val up = values("up")
         val ping = values("ping")
@@ -551,7 +610,6 @@ class MainActivity : Activity() {
         val jitter = numberOrNull(record, "jitter") ?: 100.0
         val probes = record.optInt("probes", 5).coerceAtLeast(1)
         val failures = record.optInt("failures", probes).coerceIn(0, probes)
-
         val downloadScore = min(30.0, down / 10.0 * 30.0)
         val uploadScore = min(20.0, up / 3.0 * 20.0)
         val latencyScore = max(0.0, 20.0 - max(0.0, ping - 50.0) * 0.2)
