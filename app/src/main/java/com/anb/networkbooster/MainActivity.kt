@@ -405,13 +405,14 @@ class MainActivity : Activity() {
         val search = EditText(this).apply {
             hint = "Search topics / विषय खोजें"
             textSize = 15f
-            singleLine = true
+            setSingleLine(true)
             setTextColor(primaryTextColor())
             setHintTextColor(secondaryTextColor())
             setPadding(dp(14), dp(12), dp(14), dp(12))
             background = panelBackground(cardColor(), cardBorderColor(), 13)
         }
         lateinit var languageButton: Button
+        lateinit var renderGuide: () -> Unit
         languageButton = actionButton("Language: हिंदी") { hindi = !hindi; renderGuide() }
         val results = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val detail = sectionText("एक topic चुनें / Select a topic to read its offline guide.")
@@ -429,7 +430,7 @@ class MainActivity : Activity() {
                 append(if (hindi) article.bodyHi else article.bodyEn)
             }
         }
-        fun renderGuide() {
+        renderGuide = {
             languageButton.text = if (hindi) "Language: हिंदी" else "Language: English"
             results.removeAllViews()
             val query = search.text?.toString()?.trim()?.lowercase(Locale.ROOT).orEmpty()
