@@ -8,6 +8,7 @@ import java.io.BufferedInputStream
 import java.net.HttpURLConnection
 import java.net.InetSocketAddress
 import java.net.URL
+import java.net.SocketTimeoutException
 import java.util.UUID
 import kotlin.math.abs
 
@@ -83,10 +84,10 @@ class InternetPerformanceTester(context: Context) {
                 val probe = measureLatency(network)
 
                 onStatus("Measuring download speed (about 2 MB)…")
-                val download = measureDownload(network)
+                val download = measureWithRetry("Download", onStatus) { measureDownload(network) }
 
                 onStatus("Measuring upload speed (about 512 KB)…")
-                val upload = measureUpload(network)
+                val upload = measureWithRetry("Upload", onStatus) { measureUpload(network) }
 
                 val carrier = try {
                     val tm = appContext.getSystemService(android.telephony.TelephonyManager::class.java)
@@ -145,11 +146,30 @@ class InternetPerformanceTester(context: Context) {
         return Quadruple(dnsMs, ping, jitter, failures)
     }
 
+    private fun <T> measureWithRetry(
+        label: String,
+        onStatus: (String) -> Unit,
+        block: () -> T
+    ): T {
+        return try {
+            block()
+        } catch (e: SocketTimeoutException) {
+            onStatus("$label timed out once; retrying…")
+            try {
+                block()
+            } catch (_: SocketTimeoutException) {
+                throw IllegalStateException(
+                    "$label timed out twice. Mobile data may be slow or unstable."
+                )
+            }
+        }
+    }
+
     private fun measureDownload(network: Network): Double {
         val url = URL("https://speed.cloudflare.com/__down?bytes=$DOWNLOAD_BYTES&measId=${UUID.randomUUID()}")
         val connection = network.openConnection(url) as HttpURLConnection
-        connection.connectTimeout = HTTP_TIMEOUT_MS
-        connection.readTimeout = HTTP_TIMEOUT_MS
+        connection.connectTimeout = CONNECT_TIMEOUT_MS
+        connection.readTimeout = TRANSFER_READ_TIMEOUT_MS
         connection.requestMethod = "GET"
         connection.useCaches = false
         connection.setRequestProperty("Cache-Control", "no-cache")
@@ -178,8 +198,8 @@ class InternetPerformanceTester(context: Context) {
         val payload = ByteArray(UPLOAD_BYTES) { (it % 251).toByte() }
         val url = URL("https://speed.cloudflare.com/__up?measId=${UUID.randomUUID()}")
         val connection = network.openConnection(url) as HttpURLConnection
-        connection.connectTimeout = HTTP_TIMEOUT_MS
-        connection.readTimeout = HTTP_TIMEOUT_MS
+        connection.connectTimeout = CONNECT_TIMEOUT_MS
+        connection.readTimeout = TRANSFER_READ_TIMEOUT_MS
         connection.requestMethod = "POST"
         connection.doOutput = true
         connection.useCaches = false
@@ -221,9 +241,10 @@ class InternetPerformanceTester(context: Context) {
 
     companion object {
         private const val PROBE_COUNT = 5
-        private const val SOCKET_TIMEOUT_MS = 2500
-        private const val HTTP_TIMEOUT_MS = 15000
-        private const val DOWNLOAD_BYTES = 2_000_000
-        private const val UPLOAD_BYTES = 512_000
+        private const val SOCKET_TIMEOUT_MS = 1800
+        private const val CONNECT_TIMEOUT_MS = 20000
+        private const val TRANSFER_READ_TIMEOUT_MS = 30000
+        private const val DOWNLOAD_BYTES = 1_000_000
+        private const val UPLOAD_BYTES = 256_000
     }
 }

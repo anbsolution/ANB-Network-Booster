@@ -81,7 +81,7 @@ class MainActivity : Activity() {
             setOnClickListener { startInternetTest() }
         }
         val dataNotice = sectionText(
-            "Test traffic: approx. 2 MB download + 512 KB upload. " +
+            "Test traffic: approx. 1 MB download + 256 KB upload. " +
                 "Generated test bytes are sent to Cloudflare speed-test servers; " +
                 "no personal files are uploaded. Mobile data charges may apply."
         )
