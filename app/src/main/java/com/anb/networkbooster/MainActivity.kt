@@ -14,6 +14,8 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import com.anb.networkbooster.ui.DashboardNavigation
+import com.anb.networkbooster.ui.DashboardScreen
 import com.anb.networkbooster.network.InternetPerformanceTester
 import com.anb.networkbooster.network.InternetTestResult
 import com.anb.networkbooster.network.NetworkMonitor
@@ -39,7 +41,11 @@ class MainActivity : Activity() {
     private lateinit var recommendationsView: TextView
     private lateinit var trendsView: TextView
     private lateinit var mainScroll: ScrollView
+    private lateinit var pageHost: LinearLayout
+    private val pageContainers = mutableMapOf<DashboardScreen, LinearLayout>()
+    private val dashboardNavigation = DashboardNavigation()
     private val sectionAnchors = mutableMapOf<String, View>()
+    private val navigationTabs = mutableMapOf<DashboardScreen, TextView>()
     private lateinit var speedTestButton: Button
     private lateinit var networkMonitor: NetworkMonitor
     private lateinit var signalMonitor: SignalMonitor
@@ -181,6 +187,53 @@ class MainActivity : Activity() {
         historyView = sectionText(loadHistoryText())
         root.addView(historyView)
 
+        // Phase 6.2: move existing dashboard views into five independent screens.
+        val screenViews = DashboardScreen.values().associateWith {
+            LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                visibility = View.GONE
+            }
+        }
+        pageContainers.clear()
+        pageContainers.putAll(screenViews)
+
+        fun screenForHeading(heading: String): DashboardScreen = when (heading) {
+            "Appearance" -> DashboardScreen.SETTINGS
+            "NETWORK CONNECTION" -> DashboardScreen.HOME
+            "LIVE SIM SIGNAL" -> DashboardScreen.SIGNAL
+            "AIRTEL NETWORK INTELLIGENCE",
+            "NETWORK DIAGNOSTIC ANALYZER",
+            "SMART OPTIMIZATION RECOMMENDATIONS" -> DashboardScreen.HOME
+            "PERFORMANCE DASHBOARD",
+            "SMART SPEED ENGINE · 3 TESTS" -> DashboardScreen.SPEED
+            "RECENT TEST HISTORY" -> DashboardScreen.HISTORY
+            else -> DashboardScreen.HOME
+        }
+
+        var destination = DashboardScreen.HOME
+        val existingChildren = (0 until root.childCount).map { root.getChildAt(it) }
+        existingChildren.drop(1).forEach { child ->
+            if (child is TextView) {
+                val heading = child.text?.toString().orEmpty()
+                if (heading in setOf(
+                        "Appearance", "NETWORK CONNECTION", "LIVE SIM SIGNAL",
+                        "AIRTEL NETWORK INTELLIGENCE", "NETWORK DIAGNOSTIC ANALYZER",
+                        "SMART OPTIMIZATION RECOMMENDATIONS", "PERFORMANCE DASHBOARD",
+                        "SMART SPEED ENGINE · 3 TESTS", "RECENT TEST HISTORY"
+                    )
+                ) destination = screenForHeading(heading)
+            }
+            (child.parent as? LinearLayout)?.removeView(child)
+            screenViews.getValue(destination).addView(child)
+        }
+
+        pageHost = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            screenViews.values.forEach { addView(it, matchWrap()) }
+        }
+        root.addView(pageHost, matchWrap())
+        showDashboardScreen(DashboardScreen.HOME)
+
         mainScroll = ScrollView(this).apply {
             isFillViewport = true
             clipToPadding = false
@@ -260,32 +313,45 @@ class MainActivity : Activity() {
             background = panelBackground(cardHeaderColor(), cardBorderColor(), 18)
             elevation = dp(8).toFloat()
         }
-        val items = listOf(
-            "Home" to "NETWORK CONNECTION",
-            "Signal" to "LIVE SIM SIGNAL",
-            "Speed" to "SMART SPEED ENGINE · 3 TESTS",
-            "History" to "RECENT TEST HISTORY",
-            "Settings" to "Appearance"
-        )
-        items.forEach { (label, anchor) ->
+        DashboardScreen.values().forEach { screen ->
             val tab = TextView(this).apply {
-                text = label
+                text = screen.title
                 textSize = 12f
                 typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
                 gravity = Gravity.CENTER
-                setTextColor(accentTextColor())
-                setPadding(dp(4), dp(12), dp(4), dp(12))
-                setOnClickListener { scrollToSection(anchor) }
+                setPadding(dp(3), dp(10), dp(3), dp(10))
+                setOnClickListener { showDashboardScreen(screen) }
             }
+            navigationTabs[screen] = tab
             bar.addView(tab, LinearLayout.LayoutParams(0, dp(46), 1f))
         }
+        updateNavigationSelection()
         return bar
     }
 
-    private fun scrollToSection(title: String) {
-        val target = sectionAnchors[title] ?: return
-        mainScroll.post {
-            mainScroll.smoothScrollTo(0, target.top.coerceAtLeast(0))
+    private fun showDashboardScreen(screen: DashboardScreen) {
+        if (!pageContainers.containsKey(screen)) return
+        dashboardNavigation.select(screen)
+        pageContainers.forEach { (destination, container) ->
+            container.visibility = if (destination == screen) View.VISIBLE else View.GONE
+        }
+        if (::mainScroll.isInitialized) mainScroll.smoothScrollTo(0, 0)
+        updateNavigationSelection()
+    }
+
+    private fun updateNavigationSelection() {
+        navigationTabs.forEach { (screen, tab) ->
+            val selected = screen == dashboardNavigation.currentScreen
+            tab.setTextColor(if (selected) primaryTextColor() else accentTextColor())
+            tab.typeface = Typeface.create(
+                "sans-serif-medium",
+                if (selected) Typeface.BOLD else Typeface.NORMAL
+            )
+            tab.background = panelBackground(
+                if (selected) buttonColor() else cardHeaderColor(),
+                if (selected) buttonBorderColor() else cardBorderColor(),
+                12
+            )
         }
     }
 
