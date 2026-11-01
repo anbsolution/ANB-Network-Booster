@@ -10,16 +10,25 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import com.anb.networkbooster.network.InternetPerformanceTester
+import com.anb.networkbooster.network.InternetTestResult
 import com.anb.networkbooster.network.NetworkMonitor
 import com.anb.networkbooster.network.SignalMonitor
 import com.anb.networkbooster.network.SimSignalSnapshot
+import org.json.JSONObject
+import java.text.DateFormat
+import java.util.Date
 
 class MainActivity : Activity() {
     private lateinit var networkStatusView: TextView
     private lateinit var permissionStatusView: TextView
     private lateinit var signalContainer: LinearLayout
+    private lateinit var internetStatusView: TextView
+    private lateinit var historyView: TextView
+    private lateinit var speedTestButton: Button
     private lateinit var networkMonitor: NetworkMonitor
     private lateinit var signalMonitor: SignalMonitor
+    private lateinit var internetTester: InternetPerformanceTester
     private val simViews = mutableMapOf<String, TextView>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -39,7 +48,7 @@ class MainActivity : Activity() {
         }
 
         val subtitle = TextView(this).apply {
-            text = "SIGNAL INTELLIGENCE · PHASE 2"
+            text = "INTERNET INTELLIGENCE · PHASE 3"
             textSize = 12f
             gravity = Gravity.CENTER
             setPadding(0, 8, 0, 20)
@@ -53,7 +62,7 @@ class MainActivity : Activity() {
         )
 
         val permissionButton = Button(this).apply {
-            text = "Grant permissions & start monitoring"
+            text = "Grant permissions & start signal monitoring"
             setOnClickListener { requestSignalPermissions() }
         }
 
@@ -62,6 +71,22 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
         }
 
+        val internetHeading = sectionText("INTERNET PERFORMANCE TEST")
+        internetStatusView = sectionText(
+            "Test runs on the currently selected mobile-data SIM. " +
+                "Turn Wi-Fi off and select Vi or Airtel in Android SIM settings."
+        )
+        speedTestButton = Button(this).apply {
+            text = "START INTERNET TEST"
+            setOnClickListener { startInternetTest() }
+        }
+        val dataNotice = sectionText(
+            "Test traffic: approx. 2 MB download + 512 KB upload. " +
+                "Generated test bytes are sent to Cloudflare speed-test servers; " +
+                "no personal files are uploaded. Mobile data charges may apply."
+        )
+        historyView = sectionText(loadHistoryText())
+
         root.addView(title)
         root.addView(subtitle)
         root.addView(networkStatusView)
@@ -69,24 +94,24 @@ class MainActivity : Activity() {
         root.addView(permissionStatusView)
         root.addView(permissionButton)
         root.addView(signalContainer)
+        root.addView(internetHeading)
+        root.addView(internetStatusView)
+        root.addView(speedTestButton)
+        root.addView(dataNotice)
+        root.addView(sectionText("RECENT TEST HISTORY"))
+        root.addView(historyView)
 
-        val scroll = ScrollView(this).apply {
-            addView(root)
-        }
-        setContentView(scroll)
+        setContentView(ScrollView(this).apply { addView(root) })
 
         networkMonitor = NetworkMonitor(this) { state ->
             runOnUiThread { networkStatusView.text = "Network status\n$state" }
         }
         signalMonitor = SignalMonitor(
             this,
-            onSnapshot = { snapshot ->
-                runOnUiThread { showSnapshot(snapshot) }
-            },
-            onMessage = { message ->
-                runOnUiThread { permissionStatusView.text = message }
-            }
+            onSnapshot = { snapshot -> runOnUiThread { showSnapshot(snapshot) } },
+            onMessage = { message -> runOnUiThread { permissionStatusView.text = message } }
         )
+        internetTester = InternetPerformanceTester(this)
 
         if (signalMonitor.hasRequiredPermissions()) {
             startSignalMonitoring()
@@ -97,18 +122,16 @@ class MainActivity : Activity() {
 
     private fun sectionText(value: String) = TextView(this).apply {
         text = value
-        textSize = 15f
+        textSize = 14f
         setTextColor(0xFFD5E4FF.toInt())
-        setPadding(0, 14, 0, 14)
+        setPadding(0, 12, 0, 12)
     }
 
     private fun requestSignalPermissions() {
         val missing = arrayOf(
             Manifest.permission.READ_PHONE_STATE,
             Manifest.permission.ACCESS_FINE_LOCATION
-        ).filter {
-            checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED
-        }.toTypedArray()
+        ).filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }.toTypedArray()
 
         if (missing.isEmpty()) {
             startSignalMonitoring()
@@ -141,9 +164,52 @@ class MainActivity : Activity() {
         card.text = snapshot.asDisplayText()
     }
 
+    private fun startInternetTest() {
+        speedTestButton.isEnabled = false
+        internetStatusView.text = "Preparing test…"
+        internetTester.run(
+            onStatus = { status ->
+                runOnUiThread { internetStatusView.text = status }
+            },
+            onComplete = { result ->
+                runOnUiThread {
+                    speedTestButton.isEnabled = true
+                    internetStatusView.text = result.toDisplayText()
+                    saveResult(result)
+                    historyView.text = loadHistoryText()
+                }
+            },
+            onError = { error ->
+                runOnUiThread {
+                    speedTestButton.isEnabled = true
+                    internetStatusView.text = "Test could not complete\n$error"
+                }
+            }
+        )
+    }
+
+    private fun saveResult(result: InternetTestResult) {
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        val previous = prefs.getString(KEY_HISTORY, "") ?: ""
+        val timestamp = DateFormat.getDateTimeInstance().format(Date(result.completedAt))
+        val line = "$timestamp | ${result.networkLabel} | " +
+            "Down ${result.downloadMbps?.let { "%.2f".format(it) } ?: "N/A"} Mbps | " +
+            "Up ${result.uploadMbps?.let { "%.2f".format(it) } ?: "N/A"} Mbps | " +
+            "Ping ${result.pingMs?.let { "$it ms" } ?: "N/A"}"
+        val updated = (listOf(line) + previous.lines().filter { it.isNotBlank() })
+            .take(MAX_HISTORY)
+            .joinToString("\n")
+        prefs.edit().putString(KEY_HISTORY, updated).apply()
+    }
+
+    private fun loadHistoryText(): String =
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            .getString(KEY_HISTORY, null)
+            ?: "No internet tests saved yet."
+
     override fun onStart() {
         super.onStart()
-        networkMonitor.start()
+        if (::networkMonitor.isInitialized) networkMonitor.start()
         if (::signalMonitor.isInitialized && signalMonitor.hasRequiredPermissions()) {
             signalMonitor.start()
         }
@@ -155,7 +221,7 @@ class MainActivity : Activity() {
         super.onStop()
     }
 
-    @Deprecated("Deprecated in Android API; retained for broad device compatibility")
+    @Deprecated("Deprecated Android permission callback retained for compatibility")
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<out String>,
@@ -174,5 +240,8 @@ class MainActivity : Activity() {
 
     companion object {
         private const val REQUEST_SIGNAL_PERMISSIONS = 210
+        private const val PREFS_NAME = "anb_network_history"
+        private const val KEY_HISTORY = "internet_test_history"
+        private const val MAX_HISTORY = 10
     }
 }
