@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#081426">
+    <meta name="description"
+          content="ANB Network Booster - Network Intelligence Dashboard">
+
+    <title>ANB Network Booster</title>
+
+    <link rel="stylesheet" href="css/base.css">
+    <link rel="stylesheet" href="css/components.css">
+    <link rel="stylesheet" href="css/dashboard.css">
+    <link rel="stylesheet" href="css/themes.css">
+</head>
+
+<body>
+    <div id="app" class="app-shell">
+
+        <header class="app-header">
+            <div class="brand">
+                <div class="brand-icon">ANB</div>
+                <div>
+                    <h1>ANB Network Booster</h1>
+                    <p>Network Intelligence</p>
+                </div>
+            </div>
+
+            <button id="theme-toggle"
+                    type="button"
+                    aria-label="Change appearance">
+                Theme
+            </button>
+        </header>
+
+        <main id="screen-container">
+
+            <section id="screen-home"
+                     class="app-screen"
+                     data-screen="home">
+                <h2>Network Overview</h2>
+                <div id="network-status"></div>
+                <div id="quality-summary"></div>
+                <div id="network-alerts"></div>
+            </section>
+
+            <section id="screen-signal"
+                     class="app-screen"
+                     data-screen="signal"
+                     hidden>
+                <h2>Live Signal</h2>
+                <div id="signal-metrics"></div>
+                <div id="signal-analytics"></div>
+            </section>
+
+            <section id="screen-speed"
+                     class="app-screen"
+                     data-screen="speed"
+                     hidden>
+                <h2>Smart Speed Engine</h2>
+                <div id="speed-results"></div>
+                <button id="run-speed-test" type="button">
+                    Run Speed Test
+                </button>
+            </section>
+
+            <section id="screen-history"
+                     class="app-screen"
+                     data-screen="history"
+                     hidden>
+                <h2>Network History</h2>
+                <div id="history-content"></div>
+            </section>
+
+            <section id="screen-guide"
+                     class="app-screen"
+                     data-screen="guide"
+                     hidden>
+                <h2>Offline Network Guide</h2>
+                <div id="guide-content"></div>
+            </section>
+
+            <section id="screen-settings"
+                     class="app-screen"
+                     data-screen="settings"
+                     hidden>
+                <h2>Settings</h2>
+                <div id="settings-content"></div>
+            </section>
+
+        </main>
+
+        <nav class="bottom-navigation"
+             aria-label="Main navigation">
+            <button data-target="home" aria-current="page">Home</button>
+            <button data-target="signal">Signal</button>
+            <button data-target="speed">Speed</button>
+            <button data-target="history">History</button>
+            <button data-target="guide">Guide</button>
+            <button data-target="settings">Settings</button>
+        </nav>
+
+    </div>
+
+    <script src="js/bridge.js" defer></script>
+    <script src="js/navigation.js" defer></script>
+    <script src="js/network-quality.js" defer></script>
+    <script src="js/charts.js" defer></script>
+    <script src="js/app.js" defer></script>
+</body>
+</html>

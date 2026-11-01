@@ -261,6 +261,72 @@ class SignalMonitor(
             appendLine("RSRP best / weakest: ${rsrp.maxOrNull()?.let { "$it dBm" } ?: "N/A"} / ${rsrp.minOrNull()?.let { "$it dBm" } ?: "N/A"}")
             appendLine("RSRQ average: ${averageText(rsrq, "dB")}")
             appendLine("SINR average: ${averageText(sinr, "dB")}")
+            val validRsrp = records.filter {
+                it.has("rsrp") && !it.isNull("rsrp")
+            }
+            val weakCount = validRsrp.count {
+                it.optInt("rsrp") <= -110
+            }
+            val weakPercent = if (validRsrp.isNotEmpty()) {
+                (weakCount * 100.0 / validRsrp.size).toInt()
+            } else 0
+
+            // History is stored newest-first.
+            val split = (validRsrp.size + 1) / 2
+            val newer = validRsrp.take(split).map {
+                it.optInt("rsrp")
+            }
+            val older = validRsrp.drop(split).map {
+                it.optInt("rsrp")
+            }
+
+            val newerAvg = newer.takeIf { it.isNotEmpty() }?.average()
+            val olderAvg = older.takeIf { it.isNotEmpty() }?.average()
+            val change = if (
+                newer.size >= 2 &&
+                older.size >= 2 &&
+                newerAvg != null &&
+                olderAvg != null
+            ) {
+                newerAvg - olderAvg
+            } else null
+
+            val changeText = change?.let {
+                String.format(java.util.Locale.US, "%.1f", it)
+            }
+
+            val trend = when {
+                change == null -> "Not enough samples; keep monitoring"
+                change >= 3.0 -> "Improving ($changeText dB)"
+                change <= -3.0 -> "Worsening ($changeText dB)"
+                else -> "Mostly stable (change under 3 dB)"
+            }
+
+            val timeFormat = java.text.DateFormat.getDateTimeInstance()
+            val bestRecord = validRsrp.maxByOrNull {
+                it.optInt("rsrp")
+            }
+            val weakestRecord = validRsrp.minByOrNull {
+                it.optInt("rsrp")
+            }
+
+            fun recordLabel(record: JSONObject?): String {
+                if (record == null) return "Unavailable"
+                val value = record.optInt("rsrp")
+                val time = timeFormat.format(
+                    java.util.Date(record.optLong("time"))
+                )
+                return "$value dBm · $time"
+            }
+
+            appendLine("SESSION INSIGHTS · PHASE 6.5")
+            appendLine(
+                "Weak-signal samples (RSRP ≤ -110 dBm): " +
+                "$weakCount / ${validRsrp.size} ($weakPercent%)"
+            )
+            appendLine("Recent vs earlier RSRP trend: $trend")
+            appendLine("Session best: ${recordLabel(bestRecord)}")
+            appendLine("Session weakest: ${recordLabel(weakestRecord)}")
             append("History is local to this device; up to 20 samples are retained per SIM.")
         }
     }

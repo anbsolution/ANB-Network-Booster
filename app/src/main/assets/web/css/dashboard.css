@@ -1,0 +1,154 @@
+/* ANB Network Booster - Dashboard Layout */
+
+#screen-home {
+    display: grid;
+    gap: 16px;
+}
+
+#network-status,
+#quality-summary,
+#network-alerts,
+#signal-metrics,
+#signal-analytics,
+#speed-results,
+#history-content,
+#guide-content,
+#settings-content {
+    display: grid;
+    gap: 12px;
+    min-width: 0;
+}
+
+.dashboard-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.dashboard-heading p {
+    margin: 0;
+    font-size: 12px;
+}
+
+.quality-score {
+    display: grid;
+    place-items: center;
+    min-height: 155px;
+    padding: 20px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background:
+        radial-gradient(
+            circle at top,
+            rgba(40,120,232,.18),
+            transparent 70%
+        ),
+        var(--surface);
+    text-align: center;
+}
+
+.quality-score-value {
+    margin: 0;
+    color: var(--primary);
+    font-size: clamp(38px, 12vw, 54px);
+    font-weight: 850;
+    line-height: 1.1;
+}
+
+.quality-score-label {
+    margin-top: 7px;
+    color: var(--muted);
+    font-size: 13px;
+}
+
+.network-summary {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.network-summary .card {
+    min-height: 100px;
+}
+
+.signal-strength {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.signal-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 26px;
+}
+
+.signal-bars span {
+    display: block;
+    width: 5px;
+    border-radius: 3px;
+    background: var(--muted);
+}
+
+.signal-bars span:nth-child(1) { height: 7px; }
+.signal-bars span:nth-child(2) { height: 12px; }
+.signal-bars span:nth-child(3) { height: 17px; }
+.signal-bars span:nth-child(4) { height: 22px; }
+
+.signal-bars[data-level="1"] span:nth-child(1),
+.signal-bars[data-level="2"] span:nth-child(-n+2),
+.signal-bars[data-level="3"] span:nth-child(-n+3),
+.signal-bars[data-level="4"] span {
+    background: var(--success);
+}
+
+.dashboard-section-title {
+    margin: 4px 0 0;
+    font-size: 16px;
+    font-weight: 750;
+}
+
+.diagnosis-card {
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+}
+
+.diagnosis-card h3 {
+    margin-bottom: 6px;
+    font-size: 14px;
+}
+
+.diagnosis-card p {
+    margin-bottom: 0;
+    font-size: 13px;
+}
+
+.chart-container {
+    width: 100%;
+    min-height: 190px;
+    padding: 12px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+}
+
+#run-speed-test {
+    width: 100%;
+    min-height: 48px;
+    border: 0;
+    border-radius: 13px;
+    background: var(--primary);
+    color: #ffffff;
+    font-weight: 750;
+}
+
+@media (min-width: 520px) {
+    .network-summary {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}

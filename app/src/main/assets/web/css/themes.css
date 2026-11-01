@@ -1,0 +1,75 @@
+/* ANB Network Booster - Theme System */
+
+:root,
+[data-theme="dark"] {
+    color-scheme: dark;
+
+    --bg: #081426;
+    --surface: #101f35;
+    --surface-soft: #172a43;
+    --text: #f4f7fc;
+    --muted: #9aabc1;
+    --primary: #2878e8;
+    --gold: #e2b85b;
+    --border: rgba(255,255,255,.09);
+    --success: #35c98b;
+    --warning: #f2b84b;
+    --danger: #f16c73;
+    --card-shadow: 0 8px 24px rgba(0,0,0,.18);
+}
+
+[data-theme="light"] {
+    color-scheme: light;
+
+    --bg: #f3f6fb;
+    --surface: #ffffff;
+    --surface-soft: #eaf1fc;
+    --text: #17243a;
+    --muted: #687991;
+    --primary: #2169d5;
+    --gold: #b58224;
+    --border: rgba(24,49,82,.12);
+    --success: #16875a;
+    --warning: #a96c08;
+    --danger: #c63f4a;
+    --card-shadow: 0 8px 24px rgba(30,55,90,.08);
+}
+
+/* Smooth theme transitions */
+body,
+.app-header,
+.bottom-navigation,
+.app-screen,
+.card,
+#theme-toggle {
+    transition:
+        background-color .2s ease,
+        color .2s ease,
+        border-color .2s ease,
+        box-shadow .2s ease;
+}
+
+/* Theme-aware cards */
+.card,
+.panel {
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--card-shadow);
+}
+
+/* Theme-aware form controls */
+input,
+select,
+textarea {
+    color: var(--text);
+    background: var(--surface);
+    border: 1px solid var(--border);
+}
+
+/* Theme-aware selection */
+::selection {
+    color: #ffffff;
+    background: var(--primary);
+}
