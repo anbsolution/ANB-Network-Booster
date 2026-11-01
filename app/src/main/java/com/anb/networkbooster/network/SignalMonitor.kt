@@ -32,7 +32,7 @@ data class SimSignalSnapshot(
 }
 
 /**
- * Reads modem-reported LTE signal values. This cannot increase radio power,
+ * Reads modem-reported LTE signal metrics. It cannot increase radio power,
  * override carrier policy, or force a tower handover.
  */
 class SignalMonitor(
@@ -103,14 +103,8 @@ class SignalMonitor(
                         null
                     }
 
-                // SignalStrength.dbm is a primitive Int; prefer LTE-specific dbm.
-                val dbmValue: Int? = when {
-                    lte != null && lte.dbm != Int.MAX_VALUE -> lte.dbm
-                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
-                        signalStrength.dbm != Int.MAX_VALUE -> signalStrength.dbm
-                    else -> null
-                }
-
+                // Use LTE cell metrics only. SignalStrength itself has no portable dbm property.
+                val dbmValue: Int? = lte?.dbm?.takeUnless { it == Int.MAX_VALUE }
                 val rsrpValue: Int? = lte?.rsrp?.takeUnless { it == Int.MAX_VALUE }
                 val rsrqValue: Int? = lte?.rsrq?.takeUnless { it == Int.MAX_VALUE }
                 val rssnrValue: Int? = lte?.rssnr?.takeUnless { it == Int.MAX_VALUE }
