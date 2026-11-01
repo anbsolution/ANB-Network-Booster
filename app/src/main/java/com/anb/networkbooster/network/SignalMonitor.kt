@@ -31,7 +31,10 @@ data class SimSignalSnapshot(
     }
 }
 
-/** Reads modem-reported signal metrics; it cannot increase radio power or force tower handovers. */
+/**
+ * Reads modem-reported LTE signal values. This cannot increase radio power,
+ * override carrier policy, or force a tower handover.
+ */
 class SignalMonitor(
     private val context: Context,
     private val onSnapshot: (SimSignalSnapshot) -> Unit,
@@ -56,26 +59,32 @@ class SignalMonitor(
             onMessage("Grant Phone and precise Location permissions to read cellular signal.")
             return
         }
+
         stop()
         try {
-            val subscriptionManager = context.getSystemService(SubscriptionManager::class.java)
-            val subscriptions = subscriptionManager?.activeSubscriptionInfoList.orEmpty()
             val baseManager = context.getSystemService(TelephonyManager::class.java)
+            val subscriptionManager = context.getSystemService(SubscriptionManager::class.java)
+            val activeSubscriptions = subscriptionManager.activeSubscriptionInfoList.orEmpty()
 
-            if (subscriptions.isEmpty()) {
+            if (activeSubscriptions.isEmpty()) {
                 registerForSubscription(baseManager, "Default SIM")
-                return
+            } else {
+                activeSubscriptions.forEachIndexed { index, info ->
+                    val manager = baseManager.createForSubscriptionId(info.subscriptionId)
+                    val carrier = info.carrierName?.toString()?.takeIf { it.isNotBlank() }
+                        ?: "SIM ${index + 1}"
+                    registerForSubscription(
+                        manager,
+                        "SIM ${info.simSlotIndex + 1} · $carrier"
+                    )
+                }
             }
 
-            subscriptions.forEachIndexed { index, info ->
-                val manager = baseManager.createForSubscriptionId(info.subscriptionId)
-                val carrier = info.carrierName?.toString()?.takeIf { it.isNotBlank() }
-                    ?: "SIM ${index + 1}"
-                registerForSubscription(manager, "SIM ${info.simSlotIndex + 1} · $carrier")
+            if (registrations.isEmpty()) {
+                onMessage("No active SIM signal listener is available.")
             }
-            if (registrations.isEmpty()) onMessage("No active SIM signal listener is available.")
         } catch (_: SecurityException) {
-            onMessage("Android denied SIM information. Check app permissions and retry.")
+            onMessage("Android denied SIM information. Check permissions and retry.")
         } catch (_: Exception) {
             onMessage("Cellular signal information is unavailable on this device.")
         }
@@ -85,38 +94,51 @@ class SignalMonitor(
     private fun registerForSubscription(manager: TelephonyManager, label: String) {
         val listener = object : PhoneStateListener() {
             override fun onSignalStrengthsChanged(signalStrength: SignalStrength) {
-                val lte = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    signalStrength.cellSignalStrengths
-                        .filterIsInstance<CellSignalStrengthLte>()
-                        .firstOrNull()
-                } else null
+                val lte: CellSignalStrengthLte? =
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        signalStrength.cellSignalStrengths
+                            .filterIsInstance<CellSignalStrengthLte>()
+                            .firstOrNull()
+                    } else {
+                        null
+                    }
 
-                val dbm = lte?.dbm?.takeUnless { it == Int.MAX_VALUE }
-                    ?: if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        signalStrength.dbm.takeUnless { it == Int.MAX_VALUE }
-                    } else null
+                // SignalStrength.dbm is a primitive Int; prefer LTE-specific dbm.
+                val dbmValue: Int? = when {
+                    lte != null && lte.dbm != Int.MAX_VALUE -> lte.dbm
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+                        signalStrength.dbm != Int.MAX_VALUE -> signalStrength.dbm
+                    else -> null
+                }
 
-                val rsrp = lte?.rsrp?.takeUnless { it == Int.MAX_VALUE }
-                val rsrq = lte?.rsrq?.takeUnless { it == Int.MAX_VALUE }
-                val rssnr = lte?.rssnr?.takeUnless { it == Int.MAX_VALUE }
-                val rssi = lte?.rssi?.takeUnless { it == Int.MAX_VALUE }
+                val rsrpValue: Int? = lte?.rsrp?.takeUnless { it == Int.MAX_VALUE }
+                val rsrqValue: Int? = lte?.rsrq?.takeUnless { it == Int.MAX_VALUE }
+                val rssnrValue: Int? = lte?.rssnr?.takeUnless { it == Int.MAX_VALUE }
+                val rssiValue: Int? = lte?.rssi?.takeUnless { it == Int.MAX_VALUE }
 
                 val quality = when {
-                    dbm == null -> "Unavailable"
-                    dbm >= -85 -> "Excellent"
-                    dbm >= -100 -> "Good"
-                    dbm >= -110 -> "Fair"
+                    dbmValue == null -> "Unavailable"
+                    dbmValue >= -85 -> "Excellent"
+                    dbmValue >= -100 -> "Good"
+                    dbmValue >= -110 -> "Fair"
                     else -> "Weak"
                 }
 
                 onSnapshot(
                     SimSignalSnapshot(
-                        label, dbm, rsrp, rsrq, rssnr, rssi,
-                        signalStrength.level, quality
+                        label = label,
+                        networkDbm = dbmValue,
+                        rsrp = rsrpValue,
+                        rsrq = rsrqValue,
+                        rssnr = rssnrValue,
+                        rssi = rssiValue,
+                        level = signalStrength.level,
+                        quality = quality
                     )
                 )
             }
         }
+
         try {
             manager.listen(listener, PhoneStateListener.LISTEN_SIGNAL_STRENGTHS)
             registrations.add(Registration(manager, listener))
@@ -127,9 +149,12 @@ class SignalMonitor(
 
     @Suppress("DEPRECATION")
     fun stop() {
-        registrations.forEach {
+        registrations.forEach { registration ->
             try {
-                it.manager.listen(it.listener, PhoneStateListener.LISTEN_NONE)
+                registration.manager.listen(
+                    registration.listener,
+                    PhoneStateListener.LISTEN_NONE
+                )
             } catch (_: Exception) {
                 // The system may already have removed this listener.
             }
