@@ -15,9 +15,13 @@ import com.anb.networkbooster.network.InternetTestResult
 import com.anb.networkbooster.network.NetworkMonitor
 import com.anb.networkbooster.network.SignalMonitor
 import com.anb.networkbooster.network.SimSignalSnapshot
+import org.json.JSONArray
 import org.json.JSONObject
 import java.text.DateFormat
 import java.util.Date
+import java.util.Locale
+import kotlin.math.max
+import kotlin.math.min
 
 class MainActivity : Activity() {
     private lateinit var networkStatusView: TextView
@@ -25,11 +29,14 @@ class MainActivity : Activity() {
     private lateinit var signalContainer: LinearLayout
     private lateinit var internetStatusView: TextView
     private lateinit var historyView: TextView
+    private lateinit var intelligenceView: TextView
+    private lateinit var alertView: TextView
     private lateinit var speedTestButton: Button
     private lateinit var networkMonitor: NetworkMonitor
     private lateinit var signalMonitor: SignalMonitor
     private lateinit var internetTester: InternetPerformanceTester
     private val simViews = mutableMapOf<String, TextView>()
+    private var latestAirtelSignal: SimSignalSnapshot? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -48,7 +55,7 @@ class MainActivity : Activity() {
         }
 
         val subtitle = TextView(this).apply {
-            text = "INTERNET INTELLIGENCE · PHASE 3"
+            text = "AIRTEL NETWORK INTELLIGENCE · PHASE 4"
             textSize = 12f
             gravity = Gravity.CENTER
             setPadding(0, 8, 0, 20)
@@ -71,10 +78,13 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
         }
 
+        val intelligenceHeading = sectionText("AIRTEL NETWORK INTELLIGENCE")
+        intelligenceView = sectionText(loadIntelligenceText())
+        alertView = sectionText("Network alerts will appear here after signal and speed measurements.")
+
         val internetHeading = sectionText("INTERNET PERFORMANCE TEST")
         internetStatusView = sectionText(
-            "Test runs on the currently selected mobile-data SIM. " +
-                "Turn Wi-Fi off and select Vi or Airtel in Android SIM settings."
+            "Keep Airtel selected as the default mobile-data SIM and turn Wi-Fi off before testing."
         )
         speedTestButton = Button(this).apply {
             text = "START INTERNET TEST"
@@ -94,6 +104,9 @@ class MainActivity : Activity() {
         root.addView(permissionStatusView)
         root.addView(permissionButton)
         root.addView(signalContainer)
+        root.addView(intelligenceHeading)
+        root.addView(intelligenceView)
+        root.addView(alertView)
         root.addView(internetHeading)
         root.addView(internetStatusView)
         root.addView(speedTestButton)
@@ -118,6 +131,7 @@ class MainActivity : Activity() {
         } else {
             permissionStatusView.visibility = View.VISIBLE
         }
+        refreshIntelligence()
     }
 
     private fun sectionText(value: String) = TextView(this).apply {
@@ -162,11 +176,16 @@ class MainActivity : Activity() {
             }
         }
         card.text = snapshot.asDisplayText()
+
+        if (snapshot.label.contains("airtel", ignoreCase = true)) {
+            latestAirtelSignal = snapshot
+            refreshIntelligence()
+        }
     }
 
     private fun startInternetTest() {
         speedTestButton.isEnabled = false
-        internetStatusView.text = "Preparing test…"
+        internetStatusView.text = "Preparing Airtel mobile-data test…"
         internetTester.run(
             onStatus = { status ->
                 runOnUiThread { internetStatusView.text = status }
@@ -177,12 +196,14 @@ class MainActivity : Activity() {
                     internetStatusView.text = result.toDisplayText()
                     saveResult(result)
                     historyView.text = loadHistoryText()
+                    refreshIntelligence()
                 }
             },
             onError = { error ->
                 runOnUiThread {
                     speedTestButton.isEnabled = true
                     internetStatusView.text = "Test could not complete\n$error"
+                    refreshIntelligence()
                 }
             }
         )
@@ -193,19 +214,147 @@ class MainActivity : Activity() {
         val previous = prefs.getString(KEY_HISTORY, "") ?: ""
         val timestamp = DateFormat.getDateTimeInstance().format(Date(result.completedAt))
         val line = "$timestamp | ${result.networkLabel} | " +
-            "Down ${result.downloadMbps?.let { "%.2f".format(it) } ?: "N/A"} Mbps | " +
-            "Up ${result.uploadMbps?.let { "%.2f".format(it) } ?: "N/A"} Mbps | " +
+            "Down ${result.downloadMbps?.let { "%.2f".format(Locale.US, it) } ?: "N/A"} Mbps | " +
+            "Up ${result.uploadMbps?.let { "%.2f".format(Locale.US, it) } ?: "N/A"} Mbps | " +
             "Ping ${result.pingMs?.let { "$it ms" } ?: "N/A"}"
         val updated = (listOf(line) + previous.lines().filter { it.isNotBlank() })
             .take(MAX_HISTORY)
             .joinToString("\n")
         prefs.edit().putString(KEY_HISTORY, updated).apply()
+
+        val records = loadRecords().toMutableList()
+        records.add(0, JSONObject().apply {
+            put("time", result.completedAt)
+            put("network", result.networkLabel)
+            put("dns", result.dnsMs ?: JSONObject.NULL)
+            put("ping", result.pingMs ?: JSONObject.NULL)
+            put("jitter", result.jitterMs ?: JSONObject.NULL)
+            put("failures", result.probeFailures)
+            put("probes", result.probeCount)
+            put("down", result.downloadMbps ?: JSONObject.NULL)
+            put("up", result.uploadMbps ?: JSONObject.NULL)
+        })
+        val array = JSONArray()
+        records.take(MAX_HISTORY).forEach { array.put(it) }
+        prefs.edit().putString(KEY_STRUCTURED_HISTORY, array.toString()).apply()
+    }
+
+    private fun loadRecords(): List<JSONObject> {
+        val raw = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            .getString(KEY_STRUCTURED_HISTORY, null) ?: return emptyList()
+        return try {
+            val array = JSONArray(raw)
+            (0 until array.length()).mapNotNull { index ->
+                array.optJSONObject(index)
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
     }
 
     private fun loadHistoryText(): String =
         getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
             .getString(KEY_HISTORY, null)
             ?: "No internet tests saved yet."
+
+    private fun loadIntelligenceText(): String {
+        val records = loadRecords()
+        if (records.isEmpty()) {
+            return "Airtel dashboard ready.\nRun 3 or more Airtel tests to build averages and a stability trend.\nKeep Airtel as the default mobile-data SIM."
+        }
+
+        val latest = records.first()
+        val lastThree = records.take(3)
+        val downValues = lastThree.mapNotNull { numberOrNull(it, "down") }
+        val upValues = lastThree.mapNotNull { numberOrNull(it, "up") }
+        val avgDown = downValues.takeIf { it.isNotEmpty() }?.average()
+        val avgUp = upValues.takeIf { it.isNotEmpty() }?.average()
+        val score = calculateStabilityScore(latest)
+        val label = when {
+            score >= 80 -> "Very stable"
+            score >= 65 -> "Good"
+            score >= 45 -> "Fair"
+            else -> "Needs attention"
+        }
+
+        return buildString {
+            appendLine("Latest network: ${latest.optString("network", "Mobile data")}")
+            appendLine("NETWORK STABILITY SCORE: $score / 100 · $label")
+            appendLine("Latest download: ${formatMbps(numberOrNull(latest, "down"))}")
+            appendLine("Latest upload: ${formatMbps(numberOrNull(latest, "up"))}")
+            appendLine("TCP latency: ${formatMs(latest, "ping")}")
+            appendLine("Jitter: ${formatMs(latest, "jitter")}")
+            appendLine("Last ${lastThree.size} test average download: ${avgDown?.let { "%.2f Mbps".format(Locale.US, it) } ?: "N/A"}")
+            appendLine("Last ${lastThree.size} test average upload: ${avgUp?.let { "%.2f Mbps".format(Locale.US, it) } ?: "N/A"}")
+            append("History: ${records.size} saved structured test(s)")
+        }
+    }
+
+    private fun refreshIntelligence() {
+        if (!::intelligenceView.isInitialized) return
+        intelligenceView.text = loadIntelligenceText()
+        alertView.text = buildAlerts()
+    }
+
+    private fun buildAlerts(): String {
+        val alerts = mutableListOf<String>()
+        val signal = latestAirtelSignal
+        if (signal != null) {
+            signal.rsrp?.let {
+                if (it <= -110) alerts.add("Airtel signal is weak (RSRP $it dBm). Try testing near a window or in a different location.")
+            }
+            signal.rssnr?.let {
+                if (it <= 0) alerts.add("Airtel SINR is low ($it dB); radio interference or cell load may affect speed.")
+            }
+            signal.rsrq?.let {
+                if (it <= -15) alerts.add("Airtel RSRQ is weak ($it dB); radio quality may be affected.")
+            }
+        }
+
+        val latest = loadRecords().firstOrNull()
+        if (latest != null) {
+            numberOrNull(latest, "up")?.let {
+                if (it < 0.5) alerts.add("Upload speed is low (${formatMbps(it)}). Repeat the test and compare at another time.")
+            }
+            numberOrNull(latest, "ping")?.let {
+                if (it > 150) alerts.add("TCP latency is high (${it} ms).")
+            }
+            numberOrNull(latest, "jitter")?.let {
+                if (it > 30) alerts.add("Jitter is high (${it} ms); real-time calls may feel less stable.")
+            }
+        }
+        if (alerts.isEmpty()) return "NETWORK ALERTS\nNo current warning from the latest available measurements. Continue monitoring."
+        return "NETWORK ALERTS\n• " + alerts.joinToString("\n• ")
+    }
+
+    private fun calculateStabilityScore(record: JSONObject): Int {
+        val down = numberOrNull(record, "down") ?: 0.0
+        val up = numberOrNull(record, "up") ?: 0.0
+        val ping = numberOrNull(record, "ping") ?: 250.0
+        val jitter = numberOrNull(record, "jitter") ?: 100.0
+        val probes = record.optInt("probes", 5).coerceAtLeast(1)
+        val failures = record.optInt("failures", probes).coerceIn(0, probes)
+
+        val downloadScore = min(30.0, down / 10.0 * 30.0)
+        val uploadScore = min(20.0, up / 3.0 * 20.0)
+        val latencyScore = max(0.0, 20.0 - max(0.0, ping - 50.0) * 0.2)
+        val jitterScore = max(0.0, 15.0 - jitter * 0.3)
+        val reliabilityScore = 15.0 * (1.0 - failures.toDouble() / probes)
+        return (downloadScore + uploadScore + latencyScore + jitterScore + reliabilityScore)
+            .toInt().coerceIn(0, 100)
+    }
+
+    private fun numberOrNull(obj: JSONObject, key: String): Double? {
+        if (!obj.has(key) || obj.isNull(key)) return null
+        val value = obj.optDouble(key, Double.NaN)
+        return value.takeIf { !it.isNaN() && it.isFinite() }
+    }
+
+    private fun formatMbps(value: Double?): String =
+        value?.let { "%.2f Mbps".format(Locale.US, it) } ?: "N/A"
+
+    private fun formatMs(obj: JSONObject, key: String): String =
+        if (obj.has(key) && !obj.isNull(key)) "${obj.optLong(key)} ms" else "N/A"
 
     override fun onStart() {
         super.onStart()
@@ -242,6 +391,7 @@ class MainActivity : Activity() {
         private const val REQUEST_SIGNAL_PERMISSIONS = 210
         private const val PREFS_NAME = "anb_network_history"
         private const val KEY_HISTORY = "internet_test_history"
+        private const val KEY_STRUCTURED_HISTORY = "internet_test_history_structured"
         private const val MAX_HISTORY = 10
     }
 }
