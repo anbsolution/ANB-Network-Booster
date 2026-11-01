@@ -33,6 +33,9 @@ class MainActivity : Activity() {
     private lateinit var historyView: TextView
     private lateinit var intelligenceView: TextView
     private lateinit var alertView: TextView
+    private lateinit var analyzerView: TextView
+    private lateinit var recommendationsView: TextView
+    private lateinit var trendsView: TextView
     private lateinit var speedTestButton: Button
     private lateinit var networkMonitor: NetworkMonitor
     private lateinit var signalMonitor: SignalMonitor
@@ -60,7 +63,7 @@ class MainActivity : Activity() {
         }
 
         val subtitle = TextView(this).apply {
-            text = "SMART SPEED ENGINE · PHASE 5.1"
+            text = "NETWORK INTELLIGENCE · PHASE 5.3"
             textSize = 12f
             gravity = Gravity.CENTER
             setPadding(0, 8, 0, 20)
@@ -86,6 +89,12 @@ class MainActivity : Activity() {
         val intelligenceHeading = sectionText("AIRTEL NETWORK INTELLIGENCE")
         intelligenceView = sectionText(loadIntelligenceText())
         alertView = sectionText("Network alerts will appear here after signal and speed measurements.")
+        val analyzerHeading = sectionText("NETWORK DIAGNOSTIC ANALYZER")
+        analyzerView = sectionText("Waiting for available signal and speed measurements.")
+        val recommendationsHeading = sectionText("SMART OPTIMIZATION RECOMMENDATIONS")
+        recommendationsView = sectionText("Recommendations will appear when measurements are available.")
+        val trendsHeading = sectionText("PERFORMANCE DASHBOARD · RECENT TRENDS")
+        trendsView = sectionText(buildTrendDashboard())
 
         val internetHeading = sectionText("SMART SPEED ENGINE · 3 TESTS")
         internetStatusView = sectionText(
@@ -113,6 +122,12 @@ class MainActivity : Activity() {
         root.addView(intelligenceHeading)
         root.addView(intelligenceView)
         root.addView(alertView)
+        root.addView(analyzerHeading)
+        root.addView(analyzerView)
+        root.addView(recommendationsHeading)
+        root.addView(recommendationsView)
+        root.addView(trendsHeading)
+        root.addView(trendsView)
         root.addView(internetHeading)
         root.addView(internetStatusView)
         root.addView(speedTestButton)
@@ -210,10 +225,10 @@ class MainActivity : Activity() {
                     batchResults.add(result)
                     saveResult(result)
                     historyView.text = loadHistoryText()
+                    refreshIntelligence()
                     if (testNumber < BATCH_TESTS) {
                         internetStatusView.text =
                             "Test $testNumber complete. Preparing test ${testNumber + 1}/$BATCH_TESTS…"
-                        // Let the tester's worker finish and clear its running flag before the next run.
                         mainHandler.postDelayed({ runBatchTest(testNumber + 1) }, NEXT_TEST_DELAY_MS)
                     } else {
                         finishBatch()
@@ -291,9 +306,7 @@ class MainActivity : Activity() {
             .getString(KEY_STRUCTURED_HISTORY, null) ?: return emptyList()
         return try {
             val array = JSONArray(raw)
-            (0 until array.length()).mapNotNull { index ->
-                array.optJSONObject(index)
-            }
+            (0 until array.length()).mapNotNull { index -> array.optJSONObject(index) }
         } catch (_: Exception) {
             emptyList()
         }
@@ -301,8 +314,7 @@ class MainActivity : Activity() {
 
     private fun loadHistoryText(): String =
         getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-            .getString(KEY_HISTORY, null)
-            ?: "No internet tests saved yet."
+            .getString(KEY_HISTORY, null) ?: "No internet tests saved yet."
 
     private fun loadIntelligenceText(): String {
         val records = loadRecords()
@@ -341,6 +353,9 @@ class MainActivity : Activity() {
         if (!::intelligenceView.isInitialized) return
         intelligenceView.text = loadIntelligenceText()
         alertView.text = buildAlerts()
+        if (::analyzerView.isInitialized) analyzerView.text = buildNetworkDiagnosis()
+        if (::recommendationsView.isInitialized) recommendationsView.text = buildSmartRecommendations()
+        if (::trendsView.isInitialized) trendsView.text = buildTrendDashboard()
     }
 
     private fun buildAlerts(): String {
@@ -372,6 +387,161 @@ class MainActivity : Activity() {
         }
         if (alerts.isEmpty()) return "NETWORK ALERTS\nNo current warning from the latest available measurements. Continue monitoring."
         return "NETWORK ALERTS\n• " + alerts.joinToString("\n• ")
+    }
+
+    private fun buildNetworkDiagnosis(): String {
+        val signal = latestAirtelSignal
+        val latest = loadRecords().firstOrNull()
+        val findings = mutableListOf<String>()
+        var available = 0
+
+        if (signal != null) {
+            available++
+            if (signal.quality == "Weak" || (signal.rsrp ?: 0) <= -110) {
+                findings.add("Coverage: weak LTE signal is a likely contributor.")
+            } else if (signal.quality == "Fair") {
+                findings.add("Coverage: fair signal; indoor attenuation or distance may limit performance.")
+            } else {
+                findings.add("Coverage: ${signal.quality.lowercase(Locale.US)} based on modem signal readings.")
+            }
+
+            if (signal.radioQuality == "Poor") {
+                findings.add("Radio quality: RSRQ/SINR indicates poor radio conditions; interference or cell load may contribute.")
+            } else if (signal.radioQuality == "Moderate") {
+                findings.add("Radio quality: moderate; compare repeated readings at another time.")
+            } else if (signal.radioQuality == "Good") {
+                findings.add("Radio quality: good on the latest available sample.")
+            }
+        }
+
+        if (latest != null) {
+            available++
+            val down = numberOrNull(latest, "down")
+            val up = numberOrNull(latest, "up")
+            val ping = numberOrNull(latest, "ping")
+            val jitter = numberOrNull(latest, "jitter")
+            val failures = latest.optInt("failures", 0)
+            val probes = latest.optInt("probes", 5).coerceAtLeast(1)
+
+            if (down != null) {
+                findings.add(
+                    if (down < 5.0) "Throughput: download is currently low (${formatMbps(down)}); this can reflect radio conditions, congestion, or server path."
+                    else "Throughput: latest download measured ${formatMbps(down)}."
+                )
+            }
+            if (up != null && up < 0.5) findings.add("Upload: low at ${formatMbps(up)}; repeat at another time to compare.")
+            if (ping != null && ping > 150) findings.add("Responsiveness: TCP latency is high (${ping.toInt()} ms).")
+            if (jitter != null && jitter > 30) findings.add("Consistency: jitter is elevated (${jitter.toInt()} ms).")
+            if (failures > 0) findings.add("Probe reliability: $failures of $probes TCP connection probes failed.")
+        }
+
+        val confidence = when (available) {
+            2 -> "Medium · signal + speed data available"
+            1 -> "Low · only one measurement group available"
+            else -> "Insufficient · waiting for measurements"
+        }
+
+        return buildString {
+            appendLine("RULE-BASED DIAGNOSTIC · NOT CLOUD AI")
+            appendLine("Confidence: $confidence")
+            if (findings.isEmpty()) {
+                appendLine("No diagnosis yet. Wait for a signal sample and run the speed check.")
+            } else {
+                findings.forEach { appendLine("• $it") }
+            }
+            append("Next step: compare 2–3 readings at different times. One sample cannot prove tower congestion.")
+        }
+    }
+
+    private fun buildSmartRecommendations(): String {
+        val signal = latestAirtelSignal
+        val latest = loadRecords().firstOrNull()
+        val suggestions = mutableListOf<String>()
+        var evidenceCount = 0
+
+        if (signal != null) {
+            evidenceCount++
+            val rsrp = signal.rsrp ?: signal.networkDbm
+            val rsrq = signal.rsrq
+            val sinr = signal.rssnr
+            if (rsrp != null && rsrp <= -110) {
+                suggestions.add("Coverage: compare signal near a window and outdoors. Keep the phone unobstructed; an app cannot increase tower coverage.")
+            } else if (rsrp != null && rsrp <= -100) {
+                suggestions.add("Coverage: compare nearby spots and keep the position with consistently stronger RSRP.")
+            }
+            if ((sinr != null && sinr <= 0) || (rsrq != null && rsrq <= -15)) {
+                suggestions.add("Radio quality: repeat measurements later and at another location. Poor RSRQ/SINR can reflect interference or cell load.")
+            }
+        }
+
+        if (latest != null) {
+            evidenceCount++
+            val down = numberOrNull(latest, "down")
+            val up = numberOrNull(latest, "up")
+            val ping = numberOrNull(latest, "ping")
+            val jitter = numberOrNull(latest, "jitter")
+            val failures = latest.optInt("failures", 0)
+            val probes = latest.optInt("probes", 5).coerceAtLeast(1)
+            if (down != null && down < 5.0) suggestions.add("Download: run another 3-test check later and compare at the same location.")
+            if (up != null && up < 0.5) suggestions.add("Upload: pause large background uploads during the next measurement, then retest.")
+            if (ping != null && ping > 150) suggestions.add("Latency: compare at another time and avoid heavy simultaneous downloads while testing.")
+            if (jitter != null && jitter > 30) suggestions.add("Jitter: repeat the test when the connection is otherwise idle.")
+            if (failures > 0) suggestions.add("Connection reliability: retry once. Failed TCP probes are not ICMP packet loss.")
+            if (down != null && down >= 5.0 && (ping == null || ping <= 150.0) &&
+                (jitter == null || jitter <= 30.0) && failures == 0) {
+                suggestions.add("Current test: no major speed-test warning detected. Continue monitoring.")
+            }
+        }
+
+        if (suggestions.isEmpty()) suggestions.add("Collect a live LTE signal sample and run the 3-test Smart Speed Check.")
+        val confidence = when (evidenceCount) {
+            2 -> "Recommendation confidence: Medium · signal + speed measurements"
+            1 -> "Recommendation confidence: Low · one measurement group only"
+            else -> "Recommendation confidence: Not available · waiting for measurements"
+        }
+        return buildString {
+            appendLine(confidence)
+            suggestions.distinct().forEachIndexed { index, item -> appendLine("${index + 1}. $item") }
+            append("Suggestions are diagnostic only; no modem, band, carrier or tower settings are changed.")
+        }
+    }
+
+    private fun buildTrendDashboard(): String {
+        val records = loadRecords().take(5).reversed()
+        if (records.isEmpty()) {
+            return "No performance history yet.\nRun the 3-test Smart Speed Check to create trend data."
+        }
+
+        fun values(key: String): List<Double> = records.mapNotNull { numberOrNull(it, key) }
+        fun sparkline(items: List<Double>): String {
+            if (items.isEmpty()) return "No data"
+            val glyphs = "▁▂▃▄▅▆▇█"
+            val minValue = items.minOrNull() ?: 0.0
+            val maxValue = items.maxOrNull() ?: minValue
+            if (maxValue == minValue) return items.joinToString(" ") { "▄" }
+            return items.joinToString(" ") { value ->
+                val index = (((value - minValue) / (maxValue - minValue)) * (glyphs.length - 1))
+                    .toInt().coerceIn(0, glyphs.length - 1)
+                glyphs[index].toString()
+            }
+        }
+
+        val down = values("down")
+        val up = values("up")
+        val ping = values("ping")
+        val jitter = values("jitter")
+        return buildString {
+            appendLine("Last ${records.size} saved test record(s) · oldest → newest")
+            appendLine("Download: ${sparkline(down)}")
+            appendLine("  ${down.lastOrNull()?.let { formatMbps(it) } ?: "N/A"} latest")
+            appendLine("Upload:   ${sparkline(up)}")
+            appendLine("  ${up.lastOrNull()?.let { formatMbps(it) } ?: "N/A"} latest")
+            appendLine("TCP ping: ${sparkline(ping)}")
+            appendLine("  ${ping.lastOrNull()?.let { "%.0f ms".format(Locale.US, it) } ?: "N/A"} latest")
+            appendLine("Jitter:   ${sparkline(jitter)}")
+            appendLine("  ${jitter.lastOrNull()?.let { "%.0f ms".format(Locale.US, it) } ?: "N/A"} latest")
+            append("Bars are relative within each metric's displayed history, not a shared scale.")
+        }
     }
 
     private fun calculateStabilityScore(record: JSONObject): Int {

@@ -9,6 +9,8 @@ import android.telephony.PhoneStateListener
 import android.telephony.SignalStrength
 import android.telephony.SubscriptionManager
 import android.telephony.TelephonyManager
+import org.json.JSONArray
+import org.json.JSONObject
 
 data class SimSignalSnapshot(
     val label: String,
@@ -18,22 +20,30 @@ data class SimSignalSnapshot(
     val rssnr: Int?,
     val rssi: Int?,
     val level: Int?,
-    val quality: String
+    val quality: String,
+    val radioQuality: String,
+    val coverageScore: Int?,
+    val recommendation: String,
+    val historySummary: String
 ) {
     fun asDisplayText(): String = buildString {
         appendLine(label)
+        appendLine("Coverage: $quality · Radio quality: $radioQuality")
+        appendLine("Coverage score: ${coverageScore?.let { "$it / 100" } ?: "Unavailable"} (app estimate)")
         appendLine("Signal: ${networkDbm?.let { "$it dBm" } ?: "Unavailable"}")
         appendLine("LTE RSRP: ${rsrp?.let { "$it dBm" } ?: "Unavailable"}")
         appendLine("LTE RSRQ: ${rsrq?.let { "$it dB" } ?: "Unavailable"}")
         appendLine("LTE SINR/RSSNR: ${rssnr?.let { "$it dB" } ?: "Unavailable"}")
         appendLine("LTE RSSI: ${rssi?.let { "$it dBm" } ?: "Unavailable"}")
-        append("Signal level: ${level?.let { "$it / 4" } ?: "Unavailable"} · $quality")
+        appendLine("Signal level: ${level?.let { "$it / 4" } ?: "Unavailable"}")
+        appendLine("Recommendation: $recommendation")
+        append("Coverage history: $historySummary")
     }
 }
 
 /**
- * Reads modem-reported LTE signal metrics. It cannot increase radio power,
- * override carrier policy, or force a tower handover.
+ * Reads modem-reported LTE signal metrics and keeps a small local history.
+ * It cannot increase radio power, override carrier policy, or force a tower handover.
  */
 class SignalMonitor(
     private val context: Context,
@@ -46,6 +56,7 @@ class SignalMonitor(
     )
 
     private val registrations = mutableListOf<Registration>()
+    private val lastSavedAt = mutableMapOf<String, Long>()
 
     fun hasRequiredPermissions(): Boolean =
         context.checkSelfPermission(Manifest.permission.READ_PHONE_STATE) ==
@@ -73,10 +84,7 @@ class SignalMonitor(
                     val manager = baseManager.createForSubscriptionId(info.subscriptionId)
                     val carrier = info.carrierName?.toString()?.takeIf { it.isNotBlank() }
                         ?: "SIM ${index + 1}"
-                    registerForSubscription(
-                        manager,
-                        "SIM ${info.simSlotIndex + 1} · $carrier"
-                    )
+                    registerForSubscription(manager, "SIM ${info.simSlotIndex + 1} · $carrier")
                 }
             }
 
@@ -99,24 +107,19 @@ class SignalMonitor(
                         signalStrength.cellSignalStrengths
                             .filterIsInstance<CellSignalStrengthLte>()
                             .firstOrNull()
-                    } else {
-                        null
-                    }
+                    } else null
 
-                // Use LTE cell metrics only. SignalStrength itself has no portable dbm property.
-                val dbmValue: Int? = lte?.dbm?.takeUnless { it == Int.MAX_VALUE }
-                val rsrpValue: Int? = lte?.rsrp?.takeUnless { it == Int.MAX_VALUE }
-                val rsrqValue: Int? = lte?.rsrq?.takeUnless { it == Int.MAX_VALUE }
-                val rssnrValue: Int? = lte?.rssnr?.takeUnless { it == Int.MAX_VALUE }
-                val rssiValue: Int? = lte?.rssi?.takeUnless { it == Int.MAX_VALUE }
+                val dbmValue = lte?.dbm?.takeUnless { it == Int.MAX_VALUE }
+                val rsrpValue = lte?.rsrp?.takeUnless { it == Int.MAX_VALUE }
+                val rsrqValue = lte?.rsrq?.takeUnless { it == Int.MAX_VALUE }
+                val rssnrValue = lte?.rssnr?.takeUnless { it == Int.MAX_VALUE }
+                val rssiValue = lte?.rssi?.takeUnless { it == Int.MAX_VALUE }
 
-                val quality = when {
-                    dbmValue == null -> "Unavailable"
-                    dbmValue >= -85 -> "Excellent"
-                    dbmValue >= -100 -> "Good"
-                    dbmValue >= -110 -> "Fair"
-                    else -> "Weak"
-                }
+                val coverage = classifyCoverage(rsrpValue ?: dbmValue)
+                val radio = classifyRadioQuality(rsrqValue, rssnrValue)
+                val score = calculateCoverageScore(rsrpValue ?: dbmValue, rsrqValue, rssnrValue)
+                val advice = buildRecommendation(rsrpValue ?: dbmValue, rsrqValue, rssnrValue)
+                val history = saveAndSummarize(label, rsrpValue ?: dbmValue, rsrqValue, rssnrValue)
 
                 onSnapshot(
                     SimSignalSnapshot(
@@ -127,7 +130,11 @@ class SignalMonitor(
                         rssnr = rssnrValue,
                         rssi = rssiValue,
                         level = signalStrength.level,
-                        quality = quality
+                        quality = coverage,
+                        radioQuality = radio,
+                        coverageScore = score,
+                        recommendation = advice,
+                        historySummary = history
                     )
                 )
             }
@@ -141,18 +148,98 @@ class SignalMonitor(
         }
     }
 
+    private fun classifyCoverage(rsrp: Int?): String = when {
+        rsrp == null -> "Unavailable"
+        rsrp >= -90 -> "Excellent"
+        rsrp >= -100 -> "Good"
+        rsrp >= -110 -> "Fair"
+        else -> "Weak"
+    }
+
+    private fun classifyRadioQuality(rsrq: Int?, sinr: Int?): String {
+        if (rsrq == null && sinr == null) return "Unavailable"
+        val poor = (rsrq != null && rsrq <= -15) || (sinr != null && sinr <= 0)
+        val good = (rsrq == null || rsrq >= -10) && (sinr == null || sinr >= 10)
+        return when {
+            poor -> "Poor"
+            good -> "Good"
+            else -> "Moderate"
+        }
+    }
+
+    private fun calculateCoverageScore(rsrp: Int?, rsrq: Int?, sinr: Int?): Int? {
+        if (rsrp == null && rsrq == null && sinr == null) return null
+        val signalPart = rsrp?.let { ((it + 120).coerceIn(0, 40) / 40.0) * 50.0 } ?: 25.0
+        val qualityPart = rsrq?.let { ((it + 20).coerceIn(0, 15) / 15.0) * 25.0 } ?: 12.5
+        val sinrPart = sinr?.let { (it.coerceIn(-10, 30) + 10) / 40.0 * 25.0 } ?: 12.5
+        return (signalPart + qualityPart + sinrPart).toInt().coerceIn(0, 100)
+    }
+
+    private fun buildRecommendation(rsrp: Int?, rsrq: Int?, sinr: Int?): String = when {
+        rsrp == null && rsrq == null && sinr == null ->
+            "LTE measurements are unavailable; check again where cellular data is active."
+        rsrp != null && rsrp < -110 ->
+            "Coverage is weak. Compare readings near a window or outdoors; avoid blocking the phone."
+        sinr != null && sinr <= 0 ->
+            "Signal quality is low. Retest at a different time; congestion or interference may contribute."
+        rsrq != null && rsrq <= -15 ->
+            "Radio quality is poor. Compare another nearby location and time."
+        else ->
+            "Keep monitoring. Compare repeated readings; a single sample cannot confirm coverage stability."
+    }
+
+    private fun saveAndSummarize(label: String, rsrp: Int?, rsrq: Int?, sinr: Int?): String {
+        val now = System.currentTimeMillis()
+        val key = label.hashCode().toString()
+        val prefs = context.getSharedPreferences("anb_coverage_history", Context.MODE_PRIVATE)
+        val raw = prefs.getString(key, "[]") ?: "[]"
+        val records = try {
+            val old = JSONArray(raw)
+            (0 until old.length()).mapNotNull { old.optJSONObject(it) }
+        } catch (_: Exception) {
+            emptyList()
+        }.toMutableList()
+
+        // Save at most one sample per SIM every 30 seconds to avoid noisy duplicate history.
+        if (now - (lastSavedAt[label] ?: 0L) >= SAMPLE_INTERVAL_MS) {
+            records.add(0, JSONObject().apply {
+                put("time", now)
+                put("rsrp", rsrp ?: JSONObject.NULL)
+                put("rsrq", rsrq ?: JSONObject.NULL)
+                put("sinr", sinr ?: JSONObject.NULL)
+            })
+            lastSavedAt[label] = now
+            val array = JSONArray()
+            records.take(MAX_SAMPLES).forEach { array.put(it) }
+            prefs.edit().putString(key, array.toString()).apply()
+        }
+
+        val usable = records.mapNotNull { item ->
+            if (item.isNull("rsrp")) null else item.optInt("rsrp")
+        }
+        val best = usable.maxOrNull()
+        val recent = usable.firstOrNull()
+        return buildString {
+            append("${records.size.coerceAtMost(MAX_SAMPLES)} samples")
+            if (best != null) append(" · best RSRP $best dBm")
+            if (recent != null) append(" · latest RSRP $recent dBm")
+        }
+    }
+
     @Suppress("DEPRECATION")
     fun stop() {
         registrations.forEach { registration ->
             try {
-                registration.manager.listen(
-                    registration.listener,
-                    PhoneStateListener.LISTEN_NONE
-                )
+                registration.manager.listen(registration.listener, PhoneStateListener.LISTEN_NONE)
             } catch (_: Exception) {
                 // The system may already have removed this listener.
             }
         }
         registrations.clear()
+    }
+
+    companion object {
+        private const val SAMPLE_INTERVAL_MS = 30_000L
+        private const val MAX_SAMPLES = 20
     }
 }
